@@ -14,8 +14,9 @@ def score_entity(entity: Entity, answers: dict[str, str]) -> float:
     score = 0.0
 
     for attribute_key, answer in answers.items():
-        weight = ANSWER_WEIGHTS.get(answer, 0.0)
-        attribute_value = entity.attributes.get(attribute_key, 0.0)
-        score += attribute_value * weight
+        answer_value = ANSWER_WEIGHTS.get(answer, 0.5)
+        attribute_value = entity.attributes.get(attribute_key, 0.5)
+        contribution = 1.0 - abs(answer_value - attribute_value)
+        score += contribution
 
     return score
