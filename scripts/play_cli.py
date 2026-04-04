@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from packages.engine.models import Entity, Question
+from packages.engine.filtering import filter_entities
 from packages.engine.scoring import score_entity
 from packages.engine.selection import select_next_question
 
@@ -61,7 +62,11 @@ def main() -> None:
     print("Think of a famous person.")
 
     while question_count < 5:
-        next_question = select_next_question(questions, asked_question_ids)
+        next_question = select_next_question(
+            questions,
+            asked_question_ids,
+            answered_attribute_keys=set(answers.keys()),
+        )
         if next_question is None:
             break
 
@@ -70,7 +75,10 @@ def main() -> None:
         answers[next_question.attribute_key] = answer
         question_count += 1
 
-        ranked_entities = rank_entities(entities, answers)
+        filtered_entities = filter_entities(entities, answers)
+        entities_to_rank = filtered_entities or entities
+        ranked_entities = rank_entities(entities_to_rank, answers)
+        print(f"remaining candidates: {len(entities_to_rank)}")
 
         print("Top 3 candidates:")
         for entity, score in ranked_entities[:3]:
