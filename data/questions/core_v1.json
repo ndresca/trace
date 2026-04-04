@@ -1,0 +1,352 @@
+[
+  {
+    "id": "q001_real_person",
+    "text": "Is this person a real person?",
+    "attribute_key": "is_real_person",
+    "priority": 1,
+    "enabled": true
+  },
+  {
+    "id": "q002_alive",
+    "text": "Is this person alive?",
+    "attribute_key": "is_alive",
+    "priority": 1,
+    "enabled": true
+  },
+  {
+    "id": "q003_female",
+    "text": "Is this person female?",
+    "attribute_key": "is_female",
+    "priority": 1,
+    "enabled": true
+  },
+  {
+    "id": "q004_actor",
+    "text": "Is this person known for acting?",
+    "attribute_key": "is_actor",
+    "priority": 1,
+    "enabled": true
+  },
+  {
+    "id": "q005_musician",
+    "text": "Is this person known for music?",
+    "attribute_key": "is_musician",
+    "priority": 1,
+    "enabled": true
+  },
+  {
+    "id": "q006_athlete",
+    "text": "Is this person known for sports?",
+    "attribute_key": "is_athlete",
+    "priority": 1,
+    "enabled": true
+  },
+  {
+    "id": "q007_politician",
+    "text": "Is this person known for politics?",
+    "attribute_key": "is_politician",
+    "priority": 1,
+    "enabled": true
+  },
+  {
+    "id": "q008_comedian",
+    "text": "Is this person known for comedy?",
+    "attribute_key": "is_comedian",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q009_youtuber",
+    "text": "Is this person primarily internet famous?",
+    "attribute_key": "is_internet_personality",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q010_fictional",
+    "text": "Is this person fictional?",
+    "attribute_key": "is_fictional",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q011_north_american",
+    "text": "Is this person from North America?",
+    "attribute_key": "from_north_america",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q012_european",
+    "text": "Is this person from Europe?",
+    "attribute_key": "from_europe",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q013_singer",
+    "text": "Is this person a singer?",
+    "attribute_key": "is_singer",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q014_rapper",
+    "text": "Is this person a rapper?",
+    "attribute_key": "is_rapper",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q015_band_member",
+    "text": "Is this person known for being part of a band or group?",
+    "attribute_key": "is_band_member",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q016_film_actor",
+    "text": "Is this person mainly known for movies?",
+    "attribute_key": "known_for_movies",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q017_tv_actor",
+    "text": "Is this person mainly known for television?",
+    "attribute_key": "known_for_television",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q018_director",
+    "text": "Is this person a director?",
+    "attribute_key": "is_director",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q019_author",
+    "text": "Is this person an author or writer?",
+    "attribute_key": "is_author",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q020_scientist",
+    "text": "Is this person known for science or invention?",
+    "attribute_key": "is_scientist",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q021_business",
+    "text": "Is this person known for business?",
+    "attribute_key": "is_business_person",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q022_royalty",
+    "text": "Is this person part of a royal family?",
+    "attribute_key": "is_royalty",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q023_us_president",
+    "text": "Has this person served as President of the United States?",
+    "attribute_key": "is_us_president",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q024_soccer",
+    "text": "Is this person a soccer player?",
+    "attribute_key": "is_soccer_player",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q025_basketball",
+    "text": "Is this person a basketball player?",
+    "attribute_key": "is_basketball_player",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q026_tennis",
+    "text": "Is this person a tennis player?",
+    "attribute_key": "is_tennis_player",
+    "priority": 4,
+    "enabled": true
+  },
+  {
+    "id": "q027_formula1",
+    "text": "Is this person associated with Formula 1 or racing?",
+    "attribute_key": "is_racing_driver",
+    "priority": 4,
+    "enabled": true
+  },
+  {
+    "id": "q028_wrestling",
+    "text": "Is this person known for professional wrestling?",
+    "attribute_key": "is_wrestler",
+    "priority": 4,
+    "enabled": true
+  },
+  {
+    "id": "q029_black_hair",
+    "text": "Is this person commonly recognized with dark or black hair?",
+    "attribute_key": "has_dark_hair",
+    "priority": 5,
+    "enabled": true
+  },
+  {
+    "id": "q030_blonde",
+    "text": "Is this person commonly recognized with blonde hair?",
+    "attribute_key": "has_blonde_hair",
+    "priority": 5,
+    "enabled": true
+  },
+  {
+    "id": "q031_beard",
+    "text": "Is this person commonly recognized with a beard or facial hair?",
+    "attribute_key": "has_facial_hair",
+    "priority": 5,
+    "enabled": true
+  },
+  {
+    "id": "q032_glasses",
+    "text": "Is this person commonly recognized wearing glasses?",
+    "attribute_key": "wears_glasses",
+    "priority": 5,
+    "enabled": true
+  },
+  {
+    "id": "q033_over_50",
+    "text": "Is this person over 50 years old?",
+    "attribute_key": "age_over_50",
+    "priority": 4,
+    "enabled": true
+  },
+  {
+    "id": "q034_under_30",
+    "text": "Is this person under 30 years old?",
+    "attribute_key": "age_under_30",
+    "priority": 4,
+    "enabled": true
+  },
+  {
+    "id": "q035_oscar",
+    "text": "Has this person won an Oscar?",
+    "attribute_key": "has_won_oscar",
+    "priority": 4,
+    "enabled": true
+  },
+  {
+    "id": "q036_grammy",
+    "text": "Has this person won a Grammy?",
+    "attribute_key": "has_won_grammy",
+    "priority": 4,
+    "enabled": true
+  },
+  {
+    "id": "q037_superhero_role",
+    "text": "Is this person known for playing a superhero character?",
+    "attribute_key": "known_for_superhero_role",
+    "priority": 4,
+    "enabled": true
+  },
+  {
+    "id": "q038_marvel",
+    "text": "Is this person strongly associated with Marvel?",
+    "attribute_key": "associated_with_marvel",
+    "priority": 5,
+    "enabled": true
+  },
+  {
+    "id": "q039_disney",
+    "text": "Is this person strongly associated with Disney?",
+    "attribute_key": "associated_with_disney",
+    "priority": 5,
+    "enabled": true
+  },
+  {
+    "id": "q040_pop_star",
+    "text": "Is this person mainly known as a pop star?",
+    "attribute_key": "is_pop_star",
+    "priority": 4,
+    "enabled": true
+  },
+  {
+    "id": "q041_award_show_host",
+    "text": "Is this person known for hosting shows or events?",
+    "attribute_key": "is_host",
+    "priority": 5,
+    "enabled": true
+  },
+  {
+    "id": "q042_standup",
+    "text": "Is this person known for stand-up comedy?",
+    "attribute_key": "is_standup_comedian",
+    "priority": 4,
+    "enabled": true
+  },
+  {
+    "id": "q043_supermodel",
+    "text": "Is this person known for modeling?",
+    "attribute_key": "is_model",
+    "priority": 5,
+    "enabled": true
+  },
+  {
+    "id": "q044_reality_tv",
+    "text": "Is this person known for reality TV?",
+    "attribute_key": "known_for_reality_tv",
+    "priority": 5,
+    "enabled": true
+  },
+  {
+    "id": "q045_social_media_star",
+    "text": "Is this person especially known from social media platforms?",
+    "attribute_key": "known_for_social_media",
+    "priority": 5,
+    "enabled": true
+  },
+  {
+    "id": "q046_historical",
+    "text": "Is this person mainly a historical figure?",
+    "attribute_key": "is_historical_figure",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q047_nobel",
+    "text": "Has this person won a Nobel Prize?",
+    "attribute_key": "has_won_nobel_prize",
+    "priority": 5,
+    "enabled": true
+  },
+  {
+    "id": "q048_british",
+    "text": "Is this person from the United Kingdom?",
+    "attribute_key": "from_united_kingdom",
+    "priority": 4,
+    "enabled": true
+  },
+  {
+    "id": "q049_stage_name",
+    "text": "Is this person widely known by a stage name or nickname?",
+    "attribute_key": "uses_stage_name",
+    "priority": 5,
+    "enabled": true
+  },
+  {
+    "id": "q050_first_name_iconic",
+    "text": "Is this person often recognized by a single first name?",
+    "attribute_key": "known_by_single_name",
+    "priority": 5,
+    "enabled": true
+  }
+]
