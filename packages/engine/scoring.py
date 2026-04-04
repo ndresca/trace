@@ -3,10 +3,10 @@ from .models import Entity
 
 ANSWER_WEIGHTS: dict[str, float] = {
     "yes": 1.0,
-    "probably_yes": 0.5,
-    "i_dont_know": 0.0,
-    "probably_no": -0.5,
-    "no": -1.0,
+    "probably_yes": 0.75,
+    "i_dont_know": 0.5,
+    "probably_no": 0.25,
+    "no": 0.0,
 }
 
 

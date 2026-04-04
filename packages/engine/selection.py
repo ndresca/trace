@@ -16,4 +16,4 @@ def select_next_question(
     if not remaining_questions:
         return None
 
-    return min(remaining_questions, key=lambda question: question.priority)
+    return max(remaining_questions, key=lambda question: question.priority)
