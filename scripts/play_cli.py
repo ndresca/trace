@@ -68,6 +68,7 @@ def main() -> None:
             asked_question_ids,
             answered_attribute_keys=set(answers.keys()),
             ranked_entities=ranked_entities,
+            answers=answers,
         )
         if next_question is None:
             break
