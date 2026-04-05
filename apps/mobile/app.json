@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "Trace",
+    "slug": "trace-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "assetBundlePatterns": [
+      "**/*"
+    ]
+  }
+}
