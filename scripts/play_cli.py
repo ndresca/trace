@@ -57,6 +57,7 @@ def main() -> None:
     entities = load_entities()
     asked_question_ids: set[str] = set()
     answers: dict[str, str] = {}
+    ranked_entities: list[tuple[Entity, float]] | None = None
     question_count = 0
 
     print("Think of a famous person.")
@@ -66,6 +67,7 @@ def main() -> None:
             questions,
             asked_question_ids,
             answered_attribute_keys=set(answers.keys()),
+            ranked_entities=ranked_entities,
         )
         if next_question is None:
             break
