@@ -83,6 +83,13 @@ def main() -> None:
         ranked_entities = rank_entities(entities_to_rank, answers)
         print(f"remaining candidates: {len(entities_to_rank)}")
 
+        if len(entities_to_rank) == 1:
+            print("Final top candidates:")
+            for entity, score in ranked_entities[:3]:
+                print(f"- {entity.name}: {score:.2f}")
+            print(f"I think it is: {entities_to_rank[0].name}")
+            return
+
         print("Top 3 candidates:")
         for entity, score in ranked_entities[:3]:
             print(f"- {entity.name}: {score:.2f}")
