@@ -15,7 +15,7 @@
   },
   {
     "id": "q003_female",
-    "text": "Is this person female?",
+    "text": "Is this person a woman?",
     "attribute_key": "is_female",
     "priority": 5,
     "enabled": true

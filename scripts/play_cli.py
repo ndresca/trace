@@ -62,7 +62,7 @@ def main() -> None:
 
     print("Think of a famous person.")
 
-    while question_count < 5:
+    while question_count < 8:
         next_question = select_next_question(
             questions,
             asked_question_ids,

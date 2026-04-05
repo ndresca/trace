@@ -4,6 +4,18 @@
     "slug": "trace-mobile",
     "version": "0.1.0",
     "orientation": "portrait",
+    "ios": {
+      "bundleIdentifier": "com.trace.mobile",
+      "supportsTablet": false
+    },
+    "plugins": [
+      "expo-dev-client"
+    ],
+    "extra": {
+      "revenueCat": {
+        "iosApiKeyEnvVar": "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY"
+      }
+    },
     "assetBundlePatterns": [
       "**/*"
     ]

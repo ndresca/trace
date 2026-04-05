@@ -143,7 +143,7 @@ def answer_question(session_id: str, body: AnswerRequest) -> AnswerResponse:
             session["current_question_id"] = None
             return build_guess_response(ranked_entities[0][0], remaining_candidates)
 
-    if session["question_count"] >= 5:
+    if session["question_count"] >= 8:
         session["current_question_id"] = None
         return build_guess_response(ranked_entities[0][0], remaining_candidates)
 
