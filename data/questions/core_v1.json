@@ -348,5 +348,243 @@
     "attribute_key": "uses_stage_name",
     "priority": 2,
     "enabled": true
+  },
+  {
+    "id": "q051_voice_acting",
+    "text": "Is this person known for voice acting?",
+    "attribute_key": "does_voice_acting",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q052_comedy",
+    "text": "Is this person known for comedy roles or comedic work?",
+    "attribute_key": "known_for_comedy",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q053_drama_only",
+    "text": "Is this person known primarily for dramatic roles?",
+    "attribute_key": "known_for_drama_only",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q054_peak_90s",
+    "text": "Was this person at peak fame in the 1990s?",
+    "attribute_key": "peak_era_90s",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q055_peak_2000s",
+    "text": "Was this person at peak fame in the 2000s or later?",
+    "attribute_key": "peak_era_2000s",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q056_democrat",
+    "text": "Is this person affiliated with the Democratic Party?",
+    "attribute_key": "is_democrat",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q057_republican",
+    "text": "Is this person affiliated with the Republican Party?",
+    "attribute_key": "is_republican",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q058_office_pre_2000",
+    "text": "Did this person hold political office before the year 2000?",
+    "attribute_key": "held_office_pre_2000",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q059_over_75",
+    "text": "Is this person over 75 years old?",
+    "attribute_key": "age_over_75",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q060_gaming",
+    "text": "Is this person known for gaming content?",
+    "attribute_key": "is_gaming_creator",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q061_challenge",
+    "text": "Is this person known for challenge or stunt content?",
+    "attribute_key": "is_challenge_creator",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q062_american",
+    "text": "Is this person American?",
+    "attribute_key": "is_american",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q063_swedish",
+    "text": "Is this person Swedish?",
+    "attribute_key": "is_swedish",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q064_top_subscriber",
+    "text": "Is this person among the most-subscribed creators on YouTube?",
+    "attribute_key": "subscriber_count_tier",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q065_football_player",
+    "text": "Is this person known for American football?",
+    "attribute_key": "is_american_football_player",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q066_swimmer",
+    "text": "Is this person a swimmer?",
+    "attribute_key": "is_swimmer",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q067_golfer",
+    "text": "Is this person a golfer?",
+    "attribute_key": "is_golfer",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q068_retired",
+    "text": "Has this person retired from their primary career?",
+    "attribute_key": "is_retired",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q069_peak_2010s",
+    "text": "Was this person at peak fame in the 2010s?",
+    "attribute_key": "peak_era_2010s",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q070_peak_2020s",
+    "text": "Was this person at peak fame in the 2020s?",
+    "attribute_key": "peak_era_2020s",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q071_european_leader",
+    "text": "Is this person a European political leader?",
+    "attribute_key": "is_european_leader",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q072_asian_leader",
+    "text": "Is this person an Asian political leader?",
+    "attribute_key": "is_asian_leader",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q073_lives_na",
+    "text": "Does this person currently live in North America?",
+    "attribute_key": "lives_in_north_america",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q074_eastern_europe",
+    "text": "Is this person from Eastern Europe?",
+    "attribute_key": "is_from_eastern_europe",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q075_beauty_creator",
+    "text": "Is this person known for beauty or makeup content?",
+    "attribute_key": "is_beauty_creator",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q076_tech_reviewer",
+    "text": "Is this person known for technology reviews?",
+    "attribute_key": "is_tech_reviewer",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q077_vlog_creator",
+    "text": "Is this person mainly known for vlogs?",
+    "attribute_key": "is_vlog_creator",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q078_kids_content",
+    "text": "Is this person known for kids or family content?",
+    "attribute_key": "is_kids_content_creator",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q079_live_streamer",
+    "text": "Is this person primarily a live streamer?",
+    "attribute_key": "is_live_streamer",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q080_activist",
+    "text": "Is this person known for activism or social causes?",
+    "attribute_key": "is_activist",
+    "priority": 2,
+    "enabled": true
+  },
+  {
+    "id": "q081_acting_music",
+    "text": "Does this person have both acting and music careers?",
+    "attribute_key": "has_acting_and_music_career",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q082_action_films",
+    "text": "Is this person known for action films?",
+    "attribute_key": "known_for_action_films",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q083_romantic_comedy",
+    "text": "Is this person known for romantic comedies or romantic dramas?",
+    "attribute_key": "known_for_romantic_films",
+    "priority": 3,
+    "enabled": true
+  },
+  {
+    "id": "q084_most_titles",
+    "text": "Is this person considered the most successful or decorated in their sport?",
+    "attribute_key": "has_most_titles_in_sport",
+    "priority": 2,
+    "enabled": true
   }
 ]

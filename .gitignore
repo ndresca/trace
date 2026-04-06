@@ -1,5 +1,6 @@
 .DS_Store
 .env
+apps/mobile/.env
 node_modules/
 __pycache__/
 *.pyc

@@ -15,6 +15,7 @@ from packages.engine.models import Entity, Question
 from packages.engine.filtering import filter_entities
 from packages.engine.scoring import score_entity
 from packages.engine.selection import select_next_question
+from packages.engine.game import _current_gap, _is_stalled
 
 
 def load_questions() -> list[Question]:
@@ -55,10 +56,16 @@ def main() -> None:
         asked_question_ids: set[str] = set()
         asked_attribute_keys: list[str] = []
         answers_so_far: dict[str, str] = {}
-        ranked_entities: list[tuple[Entity, float]] | None = None
+        ranked_entities = sorted(
+            ((entity, score_entity(entity, {})) for entity in entities),
+            key=lambda item: item[1],
+            reverse=True,
+        )
         questions_asked = 0
+        gap_history: list[float] = []
+        pool_history: list[int] = []
 
-        while questions_asked < 5:
+        while True:
             next_question = select_next_question(
                 questions,
                 asked_question_ids,
@@ -66,23 +73,6 @@ def main() -> None:
                 ranked_entities=ranked_entities,
                 answers=answers_so_far,
             )
-            if (
-                next_question is not None
-                and next_question.attribute_key not in case_answers
-            ):
-                fallback_question = next(
-                    (
-                        question
-                        for question in questions
-                        if question.enabled
-                        and question.id not in asked_question_ids
-                        and question.attribute_key not in answers_so_far
-                        and question.attribute_key in case_answers
-                    ),
-                    None,
-                )
-                if fallback_question is not None:
-                    next_question = fallback_question
             if next_question is None:
                 break
 
@@ -103,19 +93,15 @@ def main() -> None:
             if len(entities_to_rank) == 1:
                 break
 
-            if len(ranked_entities) >= 2:
-                top_score = ranked_entities[0][1]
-                second_score = ranked_entities[1][1]
-                score_gap = top_score - second_score
-                if score_gap >= 1.0:
-                    break
+            gap = _current_gap(ranked_entities)
+            gap_history.append(gap)
+            pool_history.append(len(entities_to_rank))
 
-        if ranked_entities is None:
-            ranked_entities = sorted(
-                ((entity, score_entity(entity, answers_so_far)) for entity in entities),
-                key=lambda item: item[1],
-                reverse=True,
-            )
+            if gap >= 1.0:
+                break
+
+            if _is_stalled(gap_history, pool_history):
+                break
 
         ranked_entity_ids = [entity.id for entity, _ in ranked_entities]
         rank = ranked_entity_ids.index(target_entity_id) + 1

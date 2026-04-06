@@ -21,6 +21,7 @@ from packages.engine.models import Entity, Question
 from packages.engine.filtering import filter_entities
 from packages.engine.scoring import score_entity
 from packages.engine.selection import select_next_question
+from packages.engine.game import _current_gap, _is_stalled
 
 
 def load_questions() -> list[Question]:
@@ -57,12 +58,14 @@ def main() -> None:
     entities = load_entities()
     asked_question_ids: set[str] = set()
     answers: dict[str, str] = {}
-    ranked_entities: list[tuple[Entity, float]] | None = None
+    ranked_entities = rank_entities(entities, {})
     question_count = 0
+    gap_history: list[float] = []
+    pool_history: list[int] = []
 
     print("Think of a famous person.")
 
-    while question_count < 8:
+    while True:
         next_question = select_next_question(
             questions,
             asked_question_ids,
@@ -98,10 +101,16 @@ def main() -> None:
             top_entity, top_score = ranked_entities[0]
             _, second_score = ranked_entities[1]
             score_gap = top_score - second_score
+            gap_history.append(score_gap)
+            pool_history.append(len(entities_to_rank))
             print(f"score gap: {score_gap:.2f}")
 
             if score_gap >= 1.0:
                 print(f"I think it is: {top_entity.name}")
+                return
+
+            if _is_stalled(gap_history, pool_history):
+                print(f"Stall detected. Best guess: {top_entity.name}")
                 return
 
     print("Game over.")

@@ -14,12 +14,13 @@ class GuessPayload(BaseModel):
     name: str
 
 
-class StartSessionResponse(BaseModel):
+class StartResponse(BaseModel):
     session_id: str
     question: QuestionPayload
 
 
 class AnswerRequest(BaseModel):
+    session_id: str
     answer: str
 
 
@@ -28,3 +29,14 @@ class AnswerResponse(BaseModel):
     next_question: Optional[QuestionPayload] = None
     guess: Optional[GuessPayload] = None
     remaining_candidates: int
+
+
+class ContinueRequest(BaseModel):
+    session_id: str
+
+
+class GuessResponse(BaseModel):
+    guess: GuessPayload
+    score: float
+    remaining_candidates: int
+    questions_asked: int

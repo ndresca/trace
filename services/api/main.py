@@ -4,22 +4,23 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from packages.engine.filtering import filter_entities
 from packages.engine.models import Entity, Question
-from packages.engine.scoring import score_entity
-from packages.engine.selection import select_next_question
+from packages.engine.game import next_action, rank_entities
 from services.api.models import (
     AnswerRequest,
     AnswerResponse,
+    ContinueRequest,
     GuessPayload,
+    GuessResponse,
     QuestionPayload,
-    StartSessionResponse,
+    StartResponse,
 )
 
 
@@ -31,7 +32,6 @@ ALLOWED_ANSWERS = {"yes", "probably_yes", "i_dont_know", "probably_no", "no"}
 def load_questions() -> list[Question]:
     with QUESTIONS_PATH.open("r", encoding="utf-8") as file:
         items = json.load(file)
-
     return [Question(**item) for item in items]
 
 
@@ -41,38 +41,35 @@ def load_entities() -> list[Entity]:
 
 
 QUESTIONS = load_questions()
-QUESTION_BY_ID = {question.id: question for question in QUESTIONS}
+QUESTION_BY_ID = {q.id: q for q in QUESTIONS}
 ENTITIES = load_entities()
 SESSIONS: dict[str, dict] = {}
 
 app = FastAPI(title="Trace API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
-def to_question_payload(question: Question) -> QuestionPayload:
-    return QuestionPayload(
-        id=question.id,
-        text=question.text,
-        attribute_key=question.attribute_key,
-    )
+def _get_session(session_id: str) -> dict:
+    session = SESSIONS.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
 
 
-def rank_entities(answers: dict[str, str]) -> tuple[list[tuple[Entity, float]], int]:
-    filtered = filter_entities(ENTITIES, answers)
-    entities_to_rank = filtered or ENTITIES
-    ranked = sorted(
-        ((entity, score_entity(entity, answers)) for entity in entities_to_rank),
-        key=lambda item: item[1],
-        reverse=True,
-    )
-    return ranked, len(entities_to_rank)
+def _eligible_entities(session: dict) -> list:
+    excluded = session.get("excluded_entity_ids", set())
+    if not excluded:
+        return ENTITIES
+    return [e for e in ENTITIES if e.id not in excluded]
 
 
-def build_guess_response(entity: Entity, remaining_candidates: int) -> AnswerResponse:
-    return AnswerResponse(
-        status="guess",
-        guess=GuessPayload(id=entity.id, name=entity.name),
-        remaining_candidates=remaining_candidates,
-    )
+def _question_payload(q: Question) -> QuestionPayload:
+    return QuestionPayload(id=q.id, text=q.text, attribute_key=q.attribute_key)
 
 
 @app.get("/health")
@@ -80,87 +77,123 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/session/start", response_model=StartSessionResponse)
-def start_session() -> StartSessionResponse:
+@app.post("/start", response_model=StartResponse)
+def start() -> StartResponse:
     session_id = uuid.uuid4().hex
-    first_question = select_next_question(
-        QUESTIONS,
+
+    result = next_action(
+        QUESTIONS, ENTITIES,
         asked_question_ids=set(),
-        answered_attribute_keys=set(),
-        ranked_entities=None,
         answers={},
+        question_count=0,
     )
-    if first_question is None:
+
+    if result["action"] != "ask":
         raise HTTPException(status_code=500, detail="No questions available")
 
     SESSIONS[session_id] = {
-        "session_id": session_id,
         "asked_question_ids": set(),
         "answers": {},
-        "ranked_entities": None,
         "question_count": 0,
-        "current_question_id": first_question.id,
+        "current_question_id": result["question"].id,
+        "excluded_entity_ids": set(),
     }
 
-    return StartSessionResponse(
+    return StartResponse(
         session_id=session_id,
-        question=to_question_payload(first_question),
+        question=_question_payload(result["question"]),
     )
 
 
-@app.post("/session/{session_id}/answer", response_model=AnswerResponse)
-def answer_question(session_id: str, body: AnswerRequest) -> AnswerResponse:
-    session = SESSIONS.get(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session not found")
+@app.post("/answer", response_model=AnswerResponse)
+def answer(body: AnswerRequest) -> AnswerResponse:
+    session = _get_session(body.session_id)
 
     if body.answer not in ALLOWED_ANSWERS:
         raise HTTPException(status_code=400, detail="Invalid answer")
 
-    current_question_id = session.get("current_question_id")
-    if not current_question_id:
-        raise HTTPException(status_code=400, detail="Session has no active question")
+    current_qid = session.get("current_question_id")
+    if not current_qid:
+        raise HTTPException(status_code=400, detail="No active question — call GET /guess")
 
-    current_question = QUESTION_BY_ID.get(current_question_id)
-    if current_question is None:
+    question = QUESTION_BY_ID.get(current_qid)
+    if question is None:
         raise HTTPException(status_code=500, detail="Question not found")
 
-    session["asked_question_ids"].add(current_question.id)
-    session["answers"][current_question.attribute_key] = body.answer
+    session["asked_question_ids"].add(question.id)
+    session["answers"][question.attribute_key] = body.answer
     session["question_count"] += 1
 
-    ranked_entities, remaining_candidates = rank_entities(session["answers"])
-    session["ranked_entities"] = ranked_entities
-
-    if remaining_candidates == 1:
-        session["current_question_id"] = None
-        return build_guess_response(ranked_entities[0][0], remaining_candidates)
-
-    if len(ranked_entities) >= 2:
-        top_score = ranked_entities[0][1]
-        second_score = ranked_entities[1][1]
-        if top_score - second_score >= 1.0:
-            session["current_question_id"] = None
-            return build_guess_response(ranked_entities[0][0], remaining_candidates)
-
-    if session["question_count"] >= 8:
-        session["current_question_id"] = None
-        return build_guess_response(ranked_entities[0][0], remaining_candidates)
-
-    next_question = select_next_question(
-        QUESTIONS,
+    result = next_action(
+        QUESTIONS, _eligible_entities(session),
         asked_question_ids=session["asked_question_ids"],
-        answered_attribute_keys=set(session["answers"].keys()),
-        ranked_entities=ranked_entities,
         answers=session["answers"],
+        question_count=session["question_count"],
     )
-    if next_question is None:
-        session["current_question_id"] = None
-        return build_guess_response(ranked_entities[0][0], remaining_candidates)
 
-    session["current_question_id"] = next_question.id
+    if result["action"] == "guess":
+        session["current_question_id"] = None
+        return AnswerResponse(
+            status="guess",
+            guess=GuessPayload(id=result["entity"].id, name=result["entity"].name),
+            remaining_candidates=result["remaining_candidates"],
+        )
+
+    session["current_question_id"] = result["question"].id
     return AnswerResponse(
         status="question",
-        next_question=to_question_payload(next_question),
-        remaining_candidates=remaining_candidates,
+        next_question=_question_payload(result["question"]),
+        remaining_candidates=result["remaining_candidates"],
+    )
+
+
+@app.post("/continue", response_model=AnswerResponse)
+def continue_game(body: ContinueRequest) -> AnswerResponse:
+    session = _get_session(body.session_id)
+
+    ranked = rank_entities(_eligible_entities(session), session["answers"])
+    if not ranked:
+        raise HTTPException(status_code=400, detail="No candidates remaining")
+
+    top_entity = ranked[0][0]
+    session["excluded_entity_ids"].add(top_entity.id)
+
+    eligible = _eligible_entities(session)
+    result = next_action(
+        QUESTIONS, eligible,
+        asked_question_ids=session["asked_question_ids"],
+        answers=session["answers"],
+        question_count=session["question_count"],
+    )
+
+    if result["action"] == "guess":
+        session["current_question_id"] = None
+        return AnswerResponse(
+            status="guess",
+            guess=GuessPayload(id=result["entity"].id, name=result["entity"].name),
+            remaining_candidates=result["remaining_candidates"],
+        )
+
+    session["current_question_id"] = result["question"].id
+    return AnswerResponse(
+        status="question",
+        next_question=_question_payload(result["question"]),
+        remaining_candidates=result["remaining_candidates"],
+    )
+
+
+@app.get("/guess", response_model=GuessResponse)
+def guess(session_id: str) -> GuessResponse:
+    session = _get_session(session_id)
+
+    ranked = rank_entities(ENTITIES, session["answers"])
+    if not ranked:
+        raise HTTPException(status_code=500, detail="No entities to rank")
+
+    top_entity, top_score = ranked[0]
+    return GuessResponse(
+        guess=GuessPayload(id=top_entity.id, name=top_entity.name),
+        score=top_score,
+        remaining_candidates=len(ranked),
+        questions_asked=session["question_count"],
     )

@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Pressable,
   SafeAreaView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -12,12 +13,13 @@ import {
   usePurchaseState,
 } from "./purchases";
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+
 const ANSWER_OPTIONS = [
   { value: "yes", label: "Yes" },
-  { value: "probably_yes", label: "Probably Yes" },
-  { value: "i_dont_know", label: "I Don't Know" },
-  { value: "probably_no", label: "Probably No" },
+  { value: "probably_yes", label: "Probably" },
+  { value: "i_dont_know", label: "Don't Know" },
+  { value: "probably_no", label: "Probably Not" },
   { value: "no", label: "No" },
 ] as const;
 
@@ -29,7 +31,12 @@ type QuestionPayload = {
   attribute_key: string;
 };
 
-type StartSessionResponse = {
+type GuessPayload = {
+  id: string;
+  name: string;
+};
+
+type StartResponse = {
   session_id: string;
   question: QuestionPayload;
 };
@@ -37,328 +44,314 @@ type StartSessionResponse = {
 type AnswerResponse = {
   status: "question" | "guess";
   next_question?: QuestionPayload | null;
-  guess?: {
-    id: string;
-    name: string;
-  } | null;
+  guess?: GuessPayload | null;
   remaining_candidates: number;
 };
+
+type Screen = "home" | "question" | "guess" | "result" | "interstitial";
 
 export default function App() {
   const { adsRemoved, isReady, removeAds, restorePurchases } =
     usePurchaseState();
+
+  const [screen, setScreen] = useState<Screen>("home");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [question, setQuestion] = useState<QuestionPayload | null>(null);
-  const [guessName, setGuessName] = useState<string | null>(null);
-  const [remainingCandidates, setRemainingCandidates] = useState<number | null>(
-    null,
-  );
-  const [questionNumber, setQuestionNumber] = useState<number>(0);
-  const [showInterstitial, setShowInterstitial] = useState(false);
+  const [guess, setGuess] = useState<GuessPayload | null>(null);
+  const [remaining, setRemaining] = useState<number>(0);
+  const [questionNumber, setQuestionNumber] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
-  const [loadingLabel, setLoadingLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  function resetGameState() {
+  function resetGame() {
+    setScreen("home");
     setSessionId(null);
     setQuestion(null);
-    setGuessName(null);
-    setRemainingCandidates(null);
+    setGuess(null);
+    setRemaining(0);
     setQuestionNumber(0);
-    setShowInterstitial(false);
     setError(null);
-    setLoadingLabel(null);
+  }
+
+  async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
+    const response = await fetch(url, {
+      headers: { "Content-Type": "application/json" },
+      ...options,
+    });
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(detail || `Request failed (${response.status})`);
+    }
+    return response.json();
+  }
+
+  function handleAnswerResponse(data: AnswerResponse) {
+    setRemaining(data.remaining_candidates);
+    if (data.status === "guess" && data.guess) {
+      setGuess(data.guess);
+      setQuestion(null);
+      setScreen("guess");
+    } else if (data.next_question) {
+      setQuestion(data.next_question);
+      setQuestionNumber((n) => n + 1);
+    }
+  }
+
+  async function startGame() {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await apiFetch<StartResponse>(`${API_BASE_URL}/start`, {
+        method: "POST",
+      });
+      setSessionId(data.session_id);
+      setQuestion(data.question);
+      setQuestionNumber(1);
+      setScreen("question");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start game.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function submitAnswer(answer: AnswerValue) {
+    if (!sessionId) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await apiFetch<AnswerResponse>(`${API_BASE_URL}/answer`, {
+        method: "POST",
+        body: JSON.stringify({ session_id: sessionId, answer }),
+      });
+      handleAnswerResponse(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to submit answer.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleWrongGuess() {
+    if (!sessionId) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await apiFetch<AnswerResponse>(`${API_BASE_URL}/continue`, {
+        method: "POST",
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      handleAnswerResponse(data);
+      if (data.status === "question") {
+        setScreen("question");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to continue.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  function handleCorrectGuess() {
+    if (adsRemoved) {
+      setScreen("result");
+    } else {
+      setScreen("interstitial");
+    }
+  }
+
+  async function handleShare() {
+    if (!guess) return;
+    await Share.share({
+      message: `Trace guessed ${guess.name} in ${questionNumber} questions! Can you stump it?`,
+    });
   }
 
   async function handleRemoveAds() {
     setIsLoading(true);
-    setLoadingLabel("Purchasing Remove Ads...");
     setError(null);
-
     try {
       await removeAds();
-      resetGameState();
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to update your purchase right now.",
-      );
+      setError(err instanceof Error ? err.message : "Purchase failed.");
     } finally {
       setIsLoading(false);
-      setLoadingLabel(null);
     }
   }
 
   async function handleRestorePurchases() {
     setIsLoading(true);
-    setLoadingLabel("Restoring purchases...");
     setError(null);
-
     try {
       const result = await restorePurchases();
-      if (result.restored) {
-        resetGameState();
-        return;
+      if (!result.restored) {
+        setError("No previous purchase found.");
       }
-
-      setError("No previous Remove Ads purchase was found.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to restore purchases.");
+      setError(err instanceof Error ? err.message : "Restore failed.");
     } finally {
       setIsLoading(false);
-      setLoadingLabel(null);
     }
   }
 
-  function handleContinueAfterGuess() {
-    if (adsRemoved) {
-      resetGameState();
-      return;
-    }
-
-    setShowInterstitial(true);
+  if (!isReady) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#111827" />
+        </View>
+      </SafeAreaView>
+    );
   }
-
-  function handleSkipInterstitial() {
-    resetGameState();
-  }
-
-  async function startGame() {
-    setIsLoading(true);
-    setLoadingLabel("Starting game...");
-    setError(null);
-    setQuestion(null);
-    setGuessName(null);
-    setRemainingCandidates(null);
-    setQuestionNumber(0);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/session/start`, {
-        method: "POST",
-      });
-
-      if (!response.ok) {
-        throw new Error("Unable to start game.");
-      }
-
-      const data: StartSessionResponse = await response.json();
-      setSessionId(data.session_id);
-      setQuestion(data.question);
-      setQuestionNumber(1);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
-    } finally {
-      setIsLoading(false);
-      setLoadingLabel(null);
-    }
-  }
-
-  async function submitAnswer(answer: AnswerValue) {
-    if (!sessionId) {
-      return;
-    }
-
-    setIsLoading(true);
-    setLoadingLabel("Submitting answer...");
-    setError(null);
-
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/session/${sessionId}/answer`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ answer }),
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error("Unable to submit answer.");
-      }
-
-      const data: AnswerResponse = await response.json();
-      setRemainingCandidates(data.remaining_candidates);
-
-      if (data.status === "question" && data.next_question) {
-        setQuestion(data.next_question);
-        setQuestionNumber((current) => current + 1);
-        return;
-      }
-
-      setQuestion(null);
-      setGuessName(data.guess?.name ?? "Unknown");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
-    } finally {
-      setIsLoading(false);
-      setLoadingLabel(null);
-    }
-  }
-
-  const hasStarted =
-    sessionId !== null ||
-    question !== null ||
-    guessName !== null ||
-    showInterstitial;
-  const progressLabel = questionNumber > 0 ? `Question ${questionNumber}` : "Question";
-  const displayQuestionText = question ? formatQuestionText(question.text) : null;
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        {!isReady ? (
-          <View style={styles.loadingBlock}>
-            <ActivityIndicator size="large" color="#111827" />
-            <Text style={styles.meta}>Loading...</Text>
-          </View>
-        ) : null}
-
-        {showInterstitial ? (
-          <View style={styles.card}>
-            <Text style={styles.eyebrow}>Sponsored</Text>
-            <Text style={styles.guessLead}>Your ad would appear here</Text>
-            <Text style={styles.meta}>
-              This is a placeholder for the future interstitial ad experience.
-            </Text>
-            <View style={styles.actions}>
-              <PrimaryButton
-                label="Skip"
-                onPress={handleSkipInterstitial}
-                disabled={isLoading}
-              />
-              <SecondaryButton
-                label={`Remove Ads Forever — ${REMOVE_ADS_PRICE_LABEL}`}
-                onPress={() => {
-                  void handleRemoveAds();
-                }}
-                disabled={isLoading}
-              />
-            </View>
-          </View>
-        ) : null}
-
-        {isReady && !hasStarted && !guessName ? (
+        {/* HOME */}
+        {screen === "home" && (
           <View style={styles.hero}>
             <Text style={styles.title}>Trace</Text>
             <Text style={styles.subtitle}>
-              Think of a famous person and I&apos;ll guess who it is.
+              Think of a famous person and I'll guess who it is.
             </Text>
             <PrimaryButton
               label="Start Game"
               onPress={startGame}
               disabled={isLoading}
             />
-            {!adsRemoved ? (
+            {!adsRemoved && (
               <SecondaryButton
                 label={`Remove Ads — ${REMOVE_ADS_PRICE_LABEL}`}
-                onPress={() => {
-                  void handleRemoveAds();
-                }}
+                onPress={() => void handleRemoveAds()}
                 disabled={isLoading}
               />
-            ) : null}
+            )}
             <SecondaryButton
               label="Restore Purchases"
-              onPress={() => {
-                void handleRestorePurchases();
-              }}
+              onPress={() => void handleRestorePurchases()}
               disabled={isLoading}
             />
           </View>
-        ) : null}
+        )}
 
-        {isLoading ? (
-          <View style={styles.loadingBlock}>
-            <ActivityIndicator size="large" color="#111827" />
-            <Text style={styles.meta}>{loadingLabel ?? "Loading..."}</Text>
+        {/* QUESTION */}
+        {screen === "question" && question && (
+          <View style={styles.card}>
+            <Text style={styles.eyebrow}>Question {questionNumber}</Text>
+            <Text style={styles.question}>{formatQuestionText(question.text)}</Text>
+            {remaining > 0 && (
+              <Text style={styles.meta}>
+                {remaining} candidate{remaining !== 1 ? "s" : ""} remaining
+              </Text>
+            )}
+            <View style={styles.answers}>
+              <View style={styles.answerRow}>
+                <AnswerButton label="Yes" onPress={() => submitAnswer("yes")} disabled={isLoading} />
+                <AnswerButton label="Probably" onPress={() => submitAnswer("probably_yes")} disabled={isLoading} />
+              </View>
+              <AnswerButton label="Don't Know" onPress={() => submitAnswer("i_dont_know")} disabled={isLoading} variant="neutral" />
+              <View style={styles.answerRow}>
+                <AnswerButton label="Probably Not" onPress={() => submitAnswer("probably_no")} disabled={isLoading} variant="negative" />
+                <AnswerButton label="No" onPress={() => submitAnswer("no")} disabled={isLoading} variant="negative" />
+              </View>
+            </View>
           </View>
-        ) : null}
+        )}
 
-        {error ? (
-          <View style={styles.errorBlock}>
-            <Text style={styles.error}>{error}</Text>
-            <View style={styles.actions}>
+        {/* GUESS */}
+        {screen === "guess" && guess && (
+          <View style={styles.card}>
+            <Text style={styles.eyebrow}>My Guess</Text>
+            <Text style={styles.guess}>{guess.name}</Text>
+            <Text style={styles.meta}>
+              After {questionNumber} question{questionNumber !== 1 ? "s" : ""}
+            </Text>
+            <Text style={styles.guessPrompt}>Was I right?</Text>
+            <View style={styles.answers}>
               <PrimaryButton
-                label={sessionId ? "Retry" : "Start Game"}
-                onPress={startGame}
+                label="Yes!"
+                onPress={handleCorrectGuess}
                 disabled={isLoading}
               />
               <SecondaryButton
-                label="Restart"
-                onPress={resetGameState}
+                label="No, keep trying"
+                onPress={() => void handleWrongGuess()}
                 disabled={isLoading}
               />
             </View>
           </View>
-        ) : null}
+        )}
 
-        {question && !showInterstitial ? (
+        {/* RESULT (correct guess) */}
+        {screen === "result" && guess && (
           <View style={styles.card}>
-            <Text style={styles.eyebrow}>{progressLabel}</Text>
-            <Text style={styles.question}>{displayQuestionText}</Text>
-            {remainingCandidates !== null ? (
-              <Text style={styles.meta}>
-                Remaining candidates: {remainingCandidates}
-              </Text>
-            ) : null}
-
+            <Text style={styles.resultEmoji}>🎯</Text>
+            <Text style={styles.guess}>{guess.name}</Text>
+            <Text style={styles.meta}>
+              Guessed in {questionNumber} question{questionNumber !== 1 ? "s" : ""}
+            </Text>
             <View style={styles.answers}>
-              {ANSWER_OPTIONS.map((answer) => (
-                <PrimaryButton
-                  key={answer.value}
-                  label={answer.label}
-                  onPress={() => submitAnswer(answer.value)}
-                  disabled={isLoading}
-                />
-              ))}
+              <PrimaryButton label="Share" onPress={() => void handleShare()} />
+              <SecondaryButton label="Play Again" onPress={resetGame} />
             </View>
           </View>
-        ) : null}
+        )}
 
-        {guessName && !showInterstitial ? (
+        {/* INTERSTITIAL (ad placeholder before result) */}
+        {screen === "interstitial" && (
           <View style={styles.card}>
-            <Text style={styles.guessLead}>I think it is...</Text>
-            <Text style={styles.guess}>{guessName}</Text>
-            <PrimaryButton
-              label="Play Again"
-              onPress={handleContinueAfterGuess}
-              disabled={isLoading}
-            />
+            <Text style={styles.eyebrow}>Sponsored</Text>
+            <Text style={styles.meta}>Your ad would appear here.</Text>
+            <View style={styles.answers}>
+              <PrimaryButton label="Continue" onPress={() => setScreen("result")} />
+              <SecondaryButton
+                label={`Remove Ads Forever — ${REMOVE_ADS_PRICE_LABEL}`}
+                onPress={() => void handleRemoveAds()}
+                disabled={isLoading}
+              />
+            </View>
           </View>
-        ) : null}
+        )}
+
+        {/* LOADING OVERLAY */}
+        {isLoading && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="small" color="#111827" />
+          </View>
+        )}
+
+        {/* ERROR */}
+        {error && (
+          <View style={styles.errorBlock}>
+            <Text style={styles.error}>{error}</Text>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
 }
 
-type PrimaryButtonProps = {
+function formatQuestionText(text: string) {
+  if (text === "Is this person female?") return "Is this person a woman?";
+  if (text === "Is this person male?") return "Is this person a man?";
+  return text;
+}
+
+type ButtonProps = {
   label: string;
   onPress: () => void;
   disabled?: boolean;
 };
 
-function formatQuestionText(text: string) {
-  if (text === "Is this person female?") {
-    return "Is this person a woman?";
-  }
-
-  if (text === "Is this person male?") {
-    return "Is this person a man?";
-  }
-
-  return text;
-}
-
-function PrimaryButton({ label, onPress, disabled = false }: PrimaryButtonProps) {
+function PrimaryButton({ label, onPress, disabled = false }: ButtonProps) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [
         styles.button,
-        disabled ? styles.buttonDisabled : null,
-        pressed && !disabled ? styles.buttonPressed : null,
+        disabled && styles.buttonDisabled,
+        pressed && !disabled && styles.buttonPressed,
       ]}
     >
       <Text style={styles.buttonText}>{label}</Text>
@@ -366,19 +359,41 @@ function PrimaryButton({ label, onPress, disabled = false }: PrimaryButtonProps)
   );
 }
 
-function SecondaryButton({
-  label,
-  onPress,
-  disabled = false,
-}: PrimaryButtonProps) {
+type AnswerButtonProps = {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  variant?: "positive" | "neutral" | "negative";
+};
+
+function AnswerButton({ label, onPress, disabled = false, variant = "positive" }: AnswerButtonProps) {
+  const bg = variant === "negative" ? "#fef2f2" : variant === "neutral" ? "#f3f4f6" : "#f0fdf4";
+  const fg = variant === "negative" ? "#991b1b" : variant === "neutral" ? "#374151" : "#166534";
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.answerButton,
+        { backgroundColor: bg },
+        disabled && styles.buttonDisabled,
+        pressed && !disabled && styles.buttonPressed,
+      ]}
+    >
+      <Text style={[styles.answerButtonText, { color: fg }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function SecondaryButton({ label, onPress, disabled = false }: ButtonProps) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [
         styles.secondaryButton,
-        disabled ? styles.buttonDisabled : null,
-        pressed && !disabled ? styles.buttonPressed : null,
+        disabled && styles.buttonDisabled,
+        pressed && !disabled && styles.buttonPressed,
       ]}
     >
       <Text style={styles.secondaryButtonText}>{label}</Text>
@@ -397,6 +412,11 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 24,
   },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   hero: {
     gap: 16,
   },
@@ -411,16 +431,6 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     color: "#4b5563",
     textAlign: "center",
-  },
-  loadingBlock: {
-    alignItems: "center",
-    gap: 12,
-  },
-  errorBlock: {
-    gap: 12,
-  },
-  actions: {
-    gap: 10,
   },
   card: {
     backgroundColor: "#ffffff",
@@ -442,22 +452,26 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   question: {
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: "600",
     color: "#111827",
     textAlign: "center",
-    lineHeight: 38,
-  },
-  guessLead: {
-    fontSize: 22,
-    fontWeight: "600",
-    color: "#111827",
-    textAlign: "center",
+    lineHeight: 36,
   },
   guess: {
     fontSize: 34,
     fontWeight: "700",
     color: "#111827",
+    textAlign: "center",
+  },
+  guessPrompt: {
+    fontSize: 20,
+    fontWeight: "500",
+    color: "#4b5563",
+    textAlign: "center",
+  },
+  resultEmoji: {
+    fontSize: 48,
     textAlign: "center",
   },
   meta: {
@@ -466,7 +480,22 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   answers: {
-    gap: 14,
+    gap: 10,
+  },
+  answerRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  answerButton: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+  },
+  answerButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    textAlign: "center",
   },
   button: {
     backgroundColor: "#111827",
@@ -497,6 +526,14 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "600",
     textAlign: "center",
+  },
+  loadingOverlay: {
+    position: "absolute",
+    top: 16,
+    right: 16,
+  },
+  errorBlock: {
+    paddingVertical: 8,
   },
   error: {
     color: "#b91c1c",
