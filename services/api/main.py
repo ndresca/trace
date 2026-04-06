@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from packages.engine.models import Entity, Question
-from packages.engine.game import next_action, rank_entities
+from packages.engine.game import next_action, rank_entities, _current_gap
 from services.api.models import (
     AnswerRequest,
     AnswerResponse,
@@ -22,6 +22,7 @@ from services.api.models import (
     QuestionPayload,
     StartResponse,
 )
+from services.api.sessions import SessionStore
 
 
 QUESTIONS_PATH = ROOT / "data" / "questions" / "core_v1.json"
@@ -43,7 +44,7 @@ def load_entities() -> list[Entity]:
 QUESTIONS = load_questions()
 QUESTION_BY_ID = {q.id: q for q in QUESTIONS}
 ENTITIES = load_entities()
-SESSIONS: dict[str, dict] = {}
+store = SessionStore()
 
 app = FastAPI(title="Trace API")
 app.add_middleware(
@@ -55,7 +56,7 @@ app.add_middleware(
 
 
 def _get_session(session_id: str) -> dict:
-    session = SESSIONS.get(session_id)
+    session = store.get(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
@@ -73,8 +74,8 @@ def _question_payload(q: Question) -> QuestionPayload:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict:
+    return {"status": "ok", "sessions": store.backend}
 
 
 @app.post("/start", response_model=StartResponse)
@@ -91,13 +92,16 @@ def start() -> StartResponse:
     if result["action"] != "ask":
         raise HTTPException(status_code=500, detail="No questions available")
 
-    SESSIONS[session_id] = {
+    session = {
         "asked_question_ids": set(),
         "answers": {},
         "question_count": 0,
         "current_question_id": result["question"].id,
         "excluded_entity_ids": set(),
+        "gap_history": [],
+        "pool_history": [],
     }
+    store.set(session_id, session)
 
     return StartResponse(
         session_id=session_id,
@@ -129,10 +133,17 @@ def answer(body: AnswerRequest) -> AnswerResponse:
         asked_question_ids=session["asked_question_ids"],
         answers=session["answers"],
         question_count=session["question_count"],
+        gap_history=session["gap_history"],
+        pool_history=session["pool_history"],
     )
+
+    gap = _current_gap(result["ranked"])
+    session["gap_history"].append(gap)
+    session["pool_history"].append(result["remaining_candidates"])
 
     if result["action"] == "guess":
         session["current_question_id"] = None
+        store.save(body.session_id, session)
         return AnswerResponse(
             status="guess",
             guess=GuessPayload(id=result["entity"].id, name=result["entity"].name),
@@ -140,6 +151,7 @@ def answer(body: AnswerRequest) -> AnswerResponse:
         )
 
     session["current_question_id"] = result["question"].id
+    store.save(body.session_id, session)
     return AnswerResponse(
         status="question",
         next_question=_question_payload(result["question"]),
@@ -158,16 +170,27 @@ def continue_game(body: ContinueRequest) -> AnswerResponse:
     top_entity = ranked[0][0]
     session["excluded_entity_ids"].add(top_entity.id)
 
+    # Reset stall tracking — pool changes after exclusion invalidate old history
+    session["gap_history"] = []
+    session["pool_history"] = []
+
     eligible = _eligible_entities(session)
     result = next_action(
         QUESTIONS, eligible,
         asked_question_ids=session["asked_question_ids"],
         answers=session["answers"],
         question_count=session["question_count"],
+        gap_history=session["gap_history"],
+        pool_history=session["pool_history"],
     )
+
+    gap = _current_gap(result["ranked"])
+    session["gap_history"].append(gap)
+    session["pool_history"].append(result["remaining_candidates"])
 
     if result["action"] == "guess":
         session["current_question_id"] = None
+        store.save(body.session_id, session)
         return AnswerResponse(
             status="guess",
             guess=GuessPayload(id=result["entity"].id, name=result["entity"].name),
@@ -175,6 +198,7 @@ def continue_game(body: ContinueRequest) -> AnswerResponse:
         )
 
     session["current_question_id"] = result["question"].id
+    store.save(body.session_id, session)
     return AnswerResponse(
         status="question",
         next_question=_question_payload(result["question"]),

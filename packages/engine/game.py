@@ -80,12 +80,13 @@ def next_action(
     answers: dict[str, str],
     question_count: int,
     gap_history: list[float] | None = None,
+    pool_history: list[int] | None = None,
 ) -> dict:
     """Returns {"action": "ask", "question": Question} or {"action": "guess", "entity": Entity, "ranked": [...]}."""
     ranked = rank_entities(entities, answers)
     remaining = len(ranked)
 
-    if should_guess(ranked, gap_history):
+    if should_guess(ranked, gap_history, pool_history):
         return {
             "action": "guess",
             "entity": ranked[0][0],

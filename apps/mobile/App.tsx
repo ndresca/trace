@@ -237,19 +237,15 @@ export default function App() {
         {/* QUESTION */}
         {screen === "question" && question && (
           <View style={styles.card}>
-            <Text style={styles.eyebrow}>Question {questionNumber}</Text>
             <Text style={styles.question}>{formatQuestionText(question.text)}</Text>
-            {remaining > 0 && (
-              <Text style={styles.meta}>
-                {remaining} candidate{remaining !== 1 ? "s" : ""} remaining
-              </Text>
-            )}
             <View style={styles.answers}>
               <View style={styles.answerRow}>
                 <AnswerButton label="Yes" onPress={() => submitAnswer("yes")} disabled={isLoading} />
                 <AnswerButton label="Probably" onPress={() => submitAnswer("probably_yes")} disabled={isLoading} />
               </View>
-              <AnswerButton label="Don't Know" onPress={() => submitAnswer("i_dont_know")} disabled={isLoading} variant="neutral" />
+              <View style={styles.answerRow}>
+                <AnswerButton label="Don't Know" onPress={() => submitAnswer("i_dont_know")} disabled={isLoading} variant="neutral" />
+              </View>
               <View style={styles.answerRow}>
                 <AnswerButton label="Probably Not" onPress={() => submitAnswer("probably_no")} disabled={isLoading} variant="negative" />
                 <AnswerButton label="No" onPress={() => submitAnswer("no")} disabled={isLoading} variant="negative" />
