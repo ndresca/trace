@@ -1,1998 +1,1900 @@
-#!/usr/bin/env python3
-"""
-Generate 120 new entities for the Trace guessing game.
-Appends to entities_v1.jsonl and gold_cases_v1.json.
+"""Generate new entities to bring the dataset to 500 total.
 
-Entities: 24 each in music, acting, sport, politics, internet.
+Each entity gets all 84 attributes as confidence scores (0.0-1.0) for the
+entity file, and yes/no/probably_yes/probably_no/i_dont_know for gold cases.
 """
 
 import json
-import os
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
-ENTITIES_PATH = PROJECT_ROOT / "data" / "seeds" / "entities_v1.jsonl"
-GOLD_CASES_PATH = PROJECT_ROOT / "data" / "eval" / "gold_cases_v1.json"
+ROOT = Path(__file__).resolve().parent.parent
+ENTITIES_PATH = ROOT / "data" / "seeds" / "entities_v1.jsonl"
+GOLD_CASES_PATH = ROOT / "data" / "eval" / "gold_cases_v1.json"
 
-# All 64 attributes in canonical order
-ALL_ATTRIBUTES = [
+# All 84 attribute keys in the order used in existing data
+ALL_ATTRS = [
     "is_real_person", "is_alive", "is_female", "is_actor", "is_musician",
-    "is_athlete", "is_politician", "is_internet_personality", "age_over_50",
-    "age_under_30", "from_north_america", "from_europe", "known_for_movies",
-    "known_for_television", "is_singer", "is_rapper", "is_band_member",
-    "has_won_grammy", "known_by_single_name", "is_pop_star",
-    "known_for_superhero_role", "associated_with_marvel", "has_won_oscar",
-    "associated_with_disney", "plays_team_sport", "plays_solo_sport",
-    "is_soccer_player", "is_tennis_player", "is_racing_driver",
-    "is_basketball_player", "is_wrestler", "has_won_major_championship",
-    "is_us_president", "has_won_nobel_prize", "known_for_reality_tv",
-    "known_for_social_media", "known_for_streaming", "is_business_person",
-    "is_fictional", "is_historical_figure", "is_director", "is_comedian",
-    "is_standup_comedian", "is_host", "is_author", "is_scientist",
-    "is_royalty", "is_head_of_state", "has_held_elected_office",
-    "uses_stage_name", "does_voice_acting", "known_for_comedy",
-    "known_for_drama_only", "peak_era_90s", "peak_era_2000s", "is_democrat",
-    "is_republican", "held_office_pre_2000", "age_over_75", "is_gaming_creator",
-    "is_challenge_creator", "is_american", "is_swedish", "subscriber_count_tier",
+    "is_athlete", "is_politician", "is_internet_personality", "from_north_america",
+    "from_europe", "is_historical_figure", "age_over_50", "age_under_30",
+    "is_fictional", "known_for_movies", "known_for_television", "is_singer",
+    "is_rapper", "is_band_member", "is_pop_star", "has_won_grammy",
+    "known_by_single_name", "known_for_reality_tv", "is_us_president",
+    "has_won_nobel_prize", "known_for_social_media", "known_for_streaming",
+    "is_business_person", "plays_team_sport", "plays_solo_sport",
+    "is_soccer_player", "is_basketball_player", "is_tennis_player",
+    "is_racing_driver", "is_wrestler", "has_won_major_championship",
+    "has_won_oscar", "known_for_superhero_role", "associated_with_marvel",
+    "associated_with_disney", "is_director", "is_comedian", "is_standup_comedian",
+    "is_host", "is_author", "is_scientist", "is_royalty", "is_head_of_state",
+    "has_held_elected_office", "uses_stage_name", "does_voice_acting",
+    "is_american", "known_for_drama_only", "is_republican", "age_over_75",
+    "is_democrat", "is_swedish", "peak_era_2000s", "is_challenge_creator",
+    "is_gaming_creator", "subscriber_count_tier", "peak_era_90s",
+    "held_office_pre_2000", "known_for_comedy", "is_american_football_player",
+    "is_swimmer", "is_golfer", "is_retired", "peak_era_2010s", "peak_era_2020s",
+    "is_european_leader", "is_asian_leader", "lives_in_north_america",
+    "is_from_eastern_europe", "is_beauty_creator", "is_tech_reviewer",
+    "is_vlog_creator", "is_kids_content_creator", "is_live_streamer",
+    "is_activist", "has_acting_and_music_career", "known_for_action_films",
+    "known_for_romantic_films", "has_most_titles_in_sport",
 ]
 
 
-def _base():
-    """Return a dict of all 64 attributes set to 0.0."""
-    return {a: 0.0 for a in ALL_ATTRIBUTES}
+def base_attrs():
+    """Return dict with all 84 attributes set to 0.0."""
+    return {k: 0.0 for k in ALL_ATTRS}
 
 
-def _music_base(**overrides):
-    d = _base()
-    d.update({"is_real_person": 1.0, "is_alive": 1.0, "is_musician": 1.0, "is_fictional": 0.0})
-    d.update(overrides)
-    return d
+def make_entity(id_, name, aliases, categories, popularity, overrides):
+    attrs = base_attrs()
+    attrs["is_real_person"] = 1.0
+    attrs["is_fictional"] = 0.0
+    for k, v in overrides.items():
+        attrs[k] = v
+    return {
+        "id": id_,
+        "name": name,
+        "aliases": aliases,
+        "categories": categories,
+        "popularity_score": popularity,
+        "attributes": attrs,
+    }
 
 
-def _acting_base(**overrides):
-    d = _base()
-    d.update({"is_real_person": 1.0, "is_alive": 1.0, "is_actor": 1.0, "is_fictional": 0.0})
-    d.update(overrides)
-    return d
+def confidence_to_answer(v):
+    if v >= 0.8:
+        return "yes"
+    elif v >= 0.5:
+        return "probably_yes"
+    elif v >= 0.3:
+        return "i_dont_know"
+    elif v >= 0.1:
+        return "probably_no"
+    else:
+        return "no"
 
 
-def _sport_base(**overrides):
-    d = _base()
-    d.update({"is_real_person": 1.0, "is_alive": 1.0, "is_athlete": 1.0, "is_fictional": 0.0})
-    d.update(overrides)
-    return d
-
-
-def _politics_base(**overrides):
-    d = _base()
-    d.update({"is_real_person": 1.0, "is_alive": 1.0, "is_politician": 1.0, "is_fictional": 0.0})
-    d.update(overrides)
-    return d
-
-
-def _internet_base(**overrides):
-    d = _base()
-    d.update({
-        "is_real_person": 1.0, "is_alive": 1.0,
-        "is_internet_personality": 1.0, "is_fictional": 0.0,
-        "known_for_social_media": 1.0,
-    })
-    d.update(overrides)
-    return d
-
-
-# ─── MUSIC (24) ────────────────────────────────────────────────────────
-
-MUSIC_ENTITIES = [
-    {
-        "id": "ed_sheeran", "name": "Ed Sheeran",
-        "aliases": ["Edward Christopher Sheeran"], "categories": ["musician", "singer"],
-        "popularity_score": 95,
-        "attributes": _music_base(
-            is_female=0.0, is_singer=1.0, is_pop_star=1.0, has_won_grammy=1.0,
-            known_by_single_name=0.0, is_rapper=0.1, is_band_member=0.0,
-            from_europe=1.0, from_north_america=0.0, is_american=0.0, is_swedish=0.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.4, peak_era_2000s=1.0, uses_stage_name=0.0,
-            is_actor=0.1, does_voice_acting=0.1, known_for_movies=0.0,
-            known_for_television=0.1, is_business_person=0.1,
-        ),
-    },
-    {
-        "id": "billie_eilish", "name": "Billie Eilish",
-        "aliases": ["Billie Eilish Pirate Baird O'Connell"], "categories": ["musician", "singer", "pop_star"],
-        "popularity_score": 94,
-        "attributes": _music_base(
-            is_female=1.0, is_singer=1.0, is_pop_star=1.0, has_won_grammy=1.0,
-            known_by_single_name=0.0, is_rapper=0.0, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            known_for_social_media=0.7, peak_era_2000s=1.0, uses_stage_name=0.0,
-            does_voice_acting=0.1, has_won_oscar=1.0,  # Bond theme / Oscar for song
-            associated_with_disney=0.1,
-        ),
-    },
-    {
-        "id": "kanye_west", "name": "Kanye West",
-        "aliases": ["Ye", "Kanye Omari West"], "categories": ["musician", "rapper", "business_person"],
-        "popularity_score": 96,
-        "attributes": _music_base(
-            is_female=0.0, is_singer=0.6, is_rapper=1.0, is_pop_star=0.7,
-            has_won_grammy=1.0, known_by_single_name=0.7, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.7, peak_era_2000s=1.0,
-            uses_stage_name=1.0,  # legally changed to Ye
-            is_business_person=0.8, is_politician=0.1,
-            known_for_reality_tv=0.3,
-        ),
-    },
-    {
-        "id": "justin_bieber", "name": "Justin Bieber",
-        "aliases": [], "categories": ["musician", "singer", "pop_star"],
-        "popularity_score": 93,
-        "attributes": _music_base(
-            is_female=0.0, is_singer=1.0, is_pop_star=1.0, has_won_grammy=1.0,
-            known_by_single_name=0.0, is_rapper=0.2, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=0.0,  # Canadian
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.6, peak_era_2000s=1.0,
-            uses_stage_name=0.0, is_internet_personality=0.3,
-        ),
-    },
-    {
-        "id": "ariana_grande", "name": "Ariana Grande",
-        "aliases": ["Ariana Grande-Butera"], "categories": ["musician", "singer", "pop_star"],
-        "popularity_score": 95,
-        "attributes": _music_base(
-            is_female=1.0, is_singer=1.0, is_pop_star=1.0, has_won_grammy=1.0,
-            known_by_single_name=0.0, is_rapper=0.0, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_actor=0.6, known_for_television=0.5, known_for_movies=0.3,
-            known_for_social_media=0.6, peak_era_2000s=1.0,
-            uses_stage_name=0.0, does_voice_acting=0.1,
-            known_for_comedy=0.2,
-        ),
-    },
-    {
-        "id": "the_weeknd", "name": "The Weeknd",
-        "aliases": ["Abel Tesfaye"], "categories": ["musician", "singer"],
-        "popularity_score": 94,
-        "attributes": _music_base(
-            is_female=0.0, is_singer=1.0, is_pop_star=0.8, has_won_grammy=1.0,
-            known_by_single_name=1.0, is_rapper=0.2, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=0.0,  # Canadian-Ethiopian
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.4, peak_era_2000s=1.0,
-            uses_stage_name=1.0, is_actor=0.2,
-            known_for_drama_only=0.1,
-        ),
-    },
-    {
-        "id": "lady_gaga", "name": "Lady Gaga",
-        "aliases": ["Stefani Joanne Angelina Germanotta"], "categories": ["musician", "singer", "pop_star"],
-        "popularity_score": 95,
-        "attributes": _music_base(
-            is_female=1.0, is_singer=1.0, is_pop_star=1.0, has_won_grammy=1.0,
-            known_by_single_name=0.8, is_rapper=0.0, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_actor=0.7, known_for_movies=0.5, has_won_oscar=1.0,
-            known_for_social_media=0.5, peak_era_2000s=1.0,
-            uses_stage_name=1.0, known_for_drama_only=0.3,
-        ),
-    },
-    {
-        "id": "bruno_mars", "name": "Bruno Mars",
-        "aliases": ["Peter Gene Hernandez"], "categories": ["musician", "singer", "pop_star"],
-        "popularity_score": 93,
-        "attributes": _music_base(
-            is_female=0.0, is_singer=1.0, is_pop_star=1.0, has_won_grammy=1.0,
-            known_by_single_name=0.0, is_rapper=0.1, is_band_member=0.3,
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.3, peak_era_2000s=1.0,
-            uses_stage_name=1.0,
-        ),
-    },
-    {
-        "id": "shakira", "name": "Shakira",
-        "aliases": ["Shakira Isabel Mebarak Ripoll"], "categories": ["musician", "singer", "pop_star"],
-        "popularity_score": 93,
-        "attributes": _music_base(
-            is_female=1.0, is_singer=1.0, is_pop_star=1.0, has_won_grammy=1.0,
-            known_by_single_name=1.0, is_rapper=0.0, is_band_member=0.0,
-            from_north_america=0.0, from_europe=0.0, is_american=0.0,  # Colombian
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.4, peak_era_2000s=1.0, peak_era_90s=0.3,
-            uses_stage_name=0.0, known_for_television=0.3,  # The Voice judge
-            is_host=0.1,
-        ),
-    },
-    {
-        "id": "eminem", "name": "Eminem",
-        "aliases": ["Marshall Bruce Mathers III", "Slim Shady"], "categories": ["musician", "rapper"],
-        "popularity_score": 95,
-        "attributes": _music_base(
-            is_female=0.0, is_singer=0.3, is_rapper=1.0, is_pop_star=0.5,
-            has_won_grammy=1.0, known_by_single_name=1.0, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.2, peak_era_2000s=0.8, peak_era_90s=1.0,
-            uses_stage_name=1.0, is_actor=0.3, known_for_movies=0.3,
-            has_won_oscar=1.0,  # Lose Yourself
-        ),
-    },
-    {
-        "id": "jay_z", "name": "Jay-Z",
-        "aliases": ["Shawn Corey Carter", "Hov", "Jigga"], "categories": ["musician", "rapper", "business_person"],
-        "popularity_score": 94,
-        "attributes": _music_base(
-            is_female=0.0, is_singer=0.2, is_rapper=1.0, is_pop_star=0.4,
-            has_won_grammy=1.0, known_by_single_name=0.8, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.2, peak_era_2000s=1.0, peak_era_90s=0.8,
-            uses_stage_name=1.0, is_business_person=1.0,
-        ),
-    },
-    {
-        "id": "katy_perry", "name": "Katy Perry",
-        "aliases": ["Katheryn Elizabeth Hudson"], "categories": ["musician", "singer", "pop_star"],
-        "popularity_score": 92,
-        "attributes": _music_base(
-            is_female=1.0, is_singer=1.0, is_pop_star=1.0, has_won_grammy=0.0,
-            known_by_single_name=0.0, is_rapper=0.0, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.4, peak_era_2000s=1.0,
-            uses_stage_name=1.0, known_for_television=0.4,  # American Idol judge
-            is_host=0.2,
-        ),
-    },
-    {
-        "id": "dua_lipa", "name": "Dua Lipa",
-        "aliases": [], "categories": ["musician", "singer", "pop_star"],
-        "popularity_score": 91,
-        "attributes": _music_base(
-            is_female=1.0, is_singer=1.0, is_pop_star=1.0, has_won_grammy=1.0,
-            known_by_single_name=0.0, is_rapper=0.0, is_band_member=0.0,
-            from_europe=1.0, from_north_america=0.0, is_american=0.0,  # British-Albanian
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.5, peak_era_2000s=1.0,
-            uses_stage_name=0.0,
-        ),
-    },
-    {
-        "id": "harry_styles", "name": "Harry Styles",
-        "aliases": ["Harry Edward Styles"], "categories": ["musician", "singer", "pop_star"],
-        "popularity_score": 93,
-        "attributes": _music_base(
-            is_female=0.0, is_singer=1.0, is_pop_star=1.0, has_won_grammy=1.0,
-            known_by_single_name=0.0, is_rapper=0.0, is_band_member=1.0,  # One Direction
-            from_europe=1.0, from_north_america=0.0, is_american=0.0,  # British
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_actor=0.5, known_for_movies=0.3, known_for_social_media=0.5,
-            peak_era_2000s=1.0, uses_stage_name=0.0,
-        ),
-    },
-    {
-        "id": "olivia_rodrigo", "name": "Olivia Rodrigo",
-        "aliases": ["Olivia Isabel Rodrigo"], "categories": ["musician", "singer", "pop_star"],
-        "popularity_score": 90,
-        "attributes": _music_base(
-            is_female=1.0, is_singer=1.0, is_pop_star=1.0, has_won_grammy=1.0,
-            known_by_single_name=0.0, is_rapper=0.0, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            is_actor=0.5, known_for_television=0.4, associated_with_disney=0.7,
-            known_for_social_media=0.6, peak_era_2000s=1.0,
-            uses_stage_name=0.0,
-        ),
-    },
-    {
-        "id": "post_malone", "name": "Post Malone",
-        "aliases": ["Austin Richard Post"], "categories": ["musician", "singer", "rapper"],
-        "popularity_score": 91,
-        "attributes": _music_base(
-            is_female=0.0, is_singer=0.8, is_rapper=0.8, is_pop_star=0.6,
-            has_won_grammy=1.0, known_by_single_name=0.0, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.4, peak_era_2000s=1.0,
-            uses_stage_name=1.0,
-        ),
-    },
-    {
-        "id": "travis_scott", "name": "Travis Scott",
-        "aliases": ["Jacques Bermon Webster II", "La Flame"], "categories": ["musician", "rapper"],
-        "popularity_score": 91,
-        "attributes": _music_base(
-            is_female=0.0, is_singer=0.4, is_rapper=1.0, is_pop_star=0.5,
-            has_won_grammy=0.0, known_by_single_name=0.0, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.5, peak_era_2000s=1.0,
-            uses_stage_name=1.0, is_business_person=0.4,
-        ),
-    },
-    {
-        "id": "nicki_minaj", "name": "Nicki Minaj",
-        "aliases": ["Onika Tanya Maraj-Petty"], "categories": ["musician", "rapper"],
-        "popularity_score": 93,
-        "attributes": _music_base(
-            is_female=1.0, is_singer=0.6, is_rapper=1.0, is_pop_star=0.7,
-            has_won_grammy=0.0, known_by_single_name=0.0, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.6, peak_era_2000s=1.0,
-            uses_stage_name=1.0, is_actor=0.2, does_voice_acting=0.3,
-            known_for_television=0.2,
-        ),
-    },
-    {
-        "id": "cardi_b", "name": "Cardi B",
-        "aliases": ["Belcalis Marlenis Almanzar"], "categories": ["musician", "rapper"],
-        "popularity_score": 91,
-        "attributes": _music_base(
-            is_female=1.0, is_singer=0.3, is_rapper=1.0, is_pop_star=0.5,
-            has_won_grammy=1.0, known_by_single_name=0.8, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.8, known_for_reality_tv=0.6,
-            peak_era_2000s=1.0, uses_stage_name=1.0,
-            is_internet_personality=0.4,
-        ),
-    },
-    {
-        "id": "sza", "name": "SZA",
-        "aliases": ["Solana Imani Rowe"], "categories": ["musician", "singer"],
-        "popularity_score": 90,
-        "attributes": _music_base(
-            is_female=1.0, is_singer=1.0, is_pop_star=0.6, has_won_grammy=1.0,
-            known_by_single_name=1.0, is_rapper=0.1, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.4, peak_era_2000s=1.0,
-            uses_stage_name=1.0,
-        ),
-    },
-    {
-        "id": "bts_group", "name": "BTS",
-        "aliases": ["Bangtan Sonyeondan", "Bangtan Boys", "Beyond The Scene"],
-        "categories": ["musician", "singer", "pop_star"],
-        "popularity_score": 96,
-        "attributes": _music_base(
-            is_female=0.0, is_singer=1.0, is_pop_star=1.0, has_won_grammy=0.0,
-            known_by_single_name=1.0, is_rapper=0.3, is_band_member=1.0,
-            from_north_america=0.0, from_europe=0.0, is_american=0.0,  # South Korean
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.9, peak_era_2000s=1.0,
-            uses_stage_name=1.0, is_internet_personality=0.3,
-        ),
-    },
-    {
-        "id": "elton_john", "name": "Elton John",
-        "aliases": ["Reginald Kenneth Dwight", "Sir Elton John"], "categories": ["musician", "singer", "pop_star"],
-        "popularity_score": 92,
-        "attributes": _music_base(
-            is_female=0.0, is_singer=1.0, is_pop_star=1.0, has_won_grammy=1.0,
-            known_by_single_name=0.0, is_rapper=0.0, is_band_member=0.0,
-            from_europe=1.0, from_north_america=0.0, is_american=0.0,  # British
-            age_over_50=1.0, age_under_30=0.0, age_over_75=1.0,
-            known_for_social_media=0.1, peak_era_2000s=0.3, peak_era_90s=0.6,
-            uses_stage_name=1.0, is_royalty=0.0,
-            has_won_oscar=1.0, associated_with_disney=0.6,
-            is_author=0.2, is_historical_figure=0.3,
-        ),
-    },
-    {
-        "id": "madonna", "name": "Madonna",
-        "aliases": ["Madonna Louise Ciccone"], "categories": ["musician", "singer", "pop_star"],
-        "popularity_score": 92,
-        "attributes": _music_base(
-            is_female=1.0, is_singer=1.0, is_pop_star=1.0, has_won_grammy=1.0,
-            known_by_single_name=1.0, is_rapper=0.0, is_band_member=0.0,
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.2, peak_era_2000s=0.3, peak_era_90s=0.8,
-            uses_stage_name=0.0,  # real first name
-            is_actor=0.3, known_for_movies=0.2,
-            is_business_person=0.4, is_director=0.1,
-            is_historical_figure=0.3,
-        ),
-    },
-    {
-        "id": "michael_jackson", "name": "Michael Jackson",
-        "aliases": ["King of Pop", "MJ"], "categories": ["musician", "singer", "pop_star"],
-        "popularity_score": 97,
-        "attributes": _music_base(
-            is_alive=0.0,  # deceased 2009
-            is_female=0.0, is_singer=1.0, is_pop_star=1.0, has_won_grammy=1.0,
-            known_by_single_name=0.0, is_rapper=0.0, is_band_member=1.0,  # Jackson 5
-            from_north_america=1.0, from_europe=0.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_social_media=0.0, peak_era_2000s=0.2, peak_era_90s=0.7,
-            uses_stage_name=0.0,
-            is_historical_figure=1.0, is_business_person=0.3,
-            does_voice_acting=0.1,
-        ),
-    },
-]
-
-# ─── ACTING (24) ───────────────────────────────────────────────────────
-
-ACTING_ENTITIES = [
-    {
-        "id": "brad_pitt", "name": "Brad Pitt",
-        "aliases": ["William Bradley Pitt"], "categories": ["actor"],
-        "popularity_score": 94,
-        "attributes": _acting_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.1,
-            has_won_oscar=1.0, is_director=0.1, is_business_person=0.3,
-            known_for_drama_only=0.4, known_for_comedy=0.3,
-            peak_era_90s=0.8, peak_era_2000s=0.8, uses_stage_name=0.0,
-            does_voice_acting=0.2,
-        ),
-    },
-    {
-        "id": "angelina_jolie", "name": "Angelina Jolie",
-        "aliases": ["Angelina Jolie Voight"], "categories": ["actor"],
-        "popularity_score": 93,
-        "attributes": _acting_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.1,
-            has_won_oscar=1.0, is_director=0.6, is_business_person=0.2,
-            known_for_drama_only=0.5, known_for_comedy=0.0,
-            peak_era_2000s=0.9, peak_era_90s=0.3, uses_stage_name=0.0,
-            does_voice_acting=0.5, associated_with_disney=0.2,
-        ),
-    },
-    {
-        "id": "will_smith", "name": "Will Smith",
-        "aliases": ["Willard Carroll Smith II", "The Fresh Prince"], "categories": ["actor", "musician"],
-        "popularity_score": 94,
-        "attributes": _acting_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.7,
-            has_won_oscar=1.0, is_musician=0.5, is_rapper=0.5, is_singer=0.3,
-            known_for_comedy=0.7, known_for_drama_only=0.0,
-            peak_era_90s=0.8, peak_era_2000s=0.8, uses_stage_name=0.0,
-            known_for_social_media=0.4, is_internet_personality=0.2,
-        ),
-    },
-    {
-        "id": "margot_robbie", "name": "Margot Robbie",
-        "aliases": ["Margot Elise Robbie"], "categories": ["actor"],
-        "popularity_score": 92,
-        "attributes": _acting_base(
-            is_female=1.0, from_north_america=0.0, from_europe=0.0,  # Australian
-            is_american=0.0, age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.2,
-            has_won_oscar=0.0, known_for_comedy=0.4, known_for_drama_only=0.2,
-            peak_era_2000s=1.0, uses_stage_name=0.0,
-            is_business_person=0.3,  # production company
-        ),
-    },
-    {
-        "id": "chris_hemsworth", "name": "Chris Hemsworth",
-        "aliases": [], "categories": ["actor"],
-        "popularity_score": 92,
-        "attributes": _acting_base(
-            is_female=0.0, from_north_america=0.0, from_europe=0.0,  # Australian
-            is_american=0.0, age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.2,
-            known_for_superhero_role=1.0, associated_with_marvel=1.0,
-            associated_with_disney=0.6, has_won_oscar=0.0,
-            known_for_comedy=0.3, known_for_drama_only=0.0,
-            peak_era_2000s=1.0, uses_stage_name=0.0,
-        ),
-    },
-    {
-        "id": "jennifer_lawrence", "name": "Jennifer Lawrence",
-        "aliases": ["J-Law"], "categories": ["actor"],
-        "popularity_score": 92,
-        "attributes": _acting_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.1,
-            has_won_oscar=1.0, known_for_comedy=0.3, known_for_drama_only=0.3,
-            peak_era_2000s=1.0, uses_stage_name=0.0,
-        ),
-    },
-    {
-        "id": "ryan_reynolds", "name": "Ryan Reynolds",
-        "aliases": ["Ryan Rodney Reynolds"], "categories": ["actor", "business_person"],
-        "popularity_score": 93,
-        "attributes": _acting_base(
-            is_female=0.0, from_north_america=1.0, is_american=0.0,  # Canadian
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.2,
-            known_for_superhero_role=0.8, associated_with_marvel=0.7,
-            associated_with_disney=0.5, has_won_oscar=0.0,
-            known_for_comedy=0.9, known_for_drama_only=0.0,
-            peak_era_2000s=1.0, uses_stage_name=0.0,
-            is_business_person=0.7, known_for_social_media=0.5,
-            does_voice_acting=0.4,
-        ),
-    },
-    {
-        "id": "emma_stone", "name": "Emma Stone",
-        "aliases": ["Emily Jean Stone"], "categories": ["actor"],
-        "popularity_score": 92,
-        "attributes": _acting_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.1,
-            has_won_oscar=1.0, known_for_comedy=0.5, known_for_drama_only=0.2,
-            peak_era_2000s=1.0, uses_stage_name=0.0,
-            does_voice_acting=0.3,
-        ),
-    },
-    {
-        "id": "denzel_washington", "name": "Denzel Washington",
-        "aliases": ["Denzel Hayes Washington Jr."], "categories": ["actor", "director"],
-        "popularity_score": 93,
-        "attributes": _acting_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.1,
-            has_won_oscar=1.0, is_director=0.4,
-            known_for_comedy=0.0, known_for_drama_only=0.9,
-            peak_era_90s=0.8, peak_era_2000s=0.7, uses_stage_name=0.0,
-        ),
-    },
-    {
-        "id": "meryl_streep", "name": "Meryl Streep",
-        "aliases": ["Mary Louise Streep"], "categories": ["actor"],
-        "popularity_score": 93,
-        "attributes": _acting_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=1.0,
-            known_for_movies=1.0, known_for_television=0.2,
-            has_won_oscar=1.0, known_for_comedy=0.3, known_for_drama_only=0.6,
-            peak_era_90s=0.7, peak_era_2000s=0.7, uses_stage_name=0.0,
-            does_voice_acting=0.3, is_singer=0.2,
-        ),
-    },
-    {
-        "id": "keanu_reeves", "name": "Keanu Reeves",
-        "aliases": ["Keanu Charles Reeves"], "categories": ["actor"],
-        "popularity_score": 93,
-        "attributes": _acting_base(
-            is_female=0.0, from_north_america=1.0, is_american=0.0,  # Canadian-born
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.0,
-            has_won_oscar=0.0, known_for_comedy=0.2, known_for_drama_only=0.3,
-            peak_era_90s=0.8, peak_era_2000s=0.8, uses_stage_name=0.0,
-            known_for_social_media=0.3, does_voice_acting=0.3,
-            is_musician=0.1,
-        ),
-    },
-    {
-        "id": "natalie_portman", "name": "Natalie Portman",
-        "aliases": ["Neta-Lee Hershlag"], "categories": ["actor"],
-        "popularity_score": 91,
-        "attributes": _acting_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.0,
-            has_won_oscar=1.0, associated_with_marvel=0.5, associated_with_disney=0.5,
-            known_for_superhero_role=0.4,
-            known_for_comedy=0.1, known_for_drama_only=0.7,
-            peak_era_2000s=0.8, peak_era_90s=0.3, uses_stage_name=1.0,
-        ),
-    },
-    {
-        "id": "chris_evans", "name": "Chris Evans",
-        "aliases": ["Christopher Robert Evans"], "categories": ["actor"],
-        "popularity_score": 92,
-        "attributes": _acting_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.1,
-            known_for_superhero_role=1.0, associated_with_marvel=1.0,
-            associated_with_disney=0.6, has_won_oscar=0.0,
-            known_for_comedy=0.2, known_for_drama_only=0.1,
-            peak_era_2000s=1.0, uses_stage_name=0.0,
-            is_director=0.2,
-        ),
-    },
-    {
-        "id": "gal_gadot", "name": "Gal Gadot",
-        "aliases": ["Gal Gadot-Varsano"], "categories": ["actor"],
-        "popularity_score": 90,
-        "attributes": _acting_base(
-            is_female=1.0, from_north_america=0.0, from_europe=0.0,  # Israeli
-            is_american=0.0, age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.1,
-            known_for_superhero_role=1.0, associated_with_marvel=0.0,  # DC
-            associated_with_disney=0.1, has_won_oscar=0.0,
-            known_for_comedy=0.1, known_for_drama_only=0.2,
-            peak_era_2000s=1.0, uses_stage_name=0.0,
-        ),
-    },
-    {
-        "id": "timothee_chalamet", "name": "Timothee Chalamet",
-        "aliases": ["Timothee Hal Chalamet"], "categories": ["actor"],
-        "popularity_score": 91,
-        "attributes": _acting_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.1,
-            has_won_oscar=0.0, known_for_comedy=0.1, known_for_drama_only=0.8,
-            peak_era_2000s=1.0, uses_stage_name=0.0,
-            known_for_social_media=0.3,
-        ),
-    },
-    {
-        "id": "florence_pugh", "name": "Florence Pugh",
-        "aliases": [], "categories": ["actor"],
-        "popularity_score": 89,
-        "attributes": _acting_base(
-            is_female=1.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # British
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.1,
-            associated_with_marvel=0.6, associated_with_disney=0.4,
-            known_for_superhero_role=0.4, has_won_oscar=0.0,
-            known_for_comedy=0.1, known_for_drama_only=0.6,
-            peak_era_2000s=1.0, uses_stage_name=0.0,
-        ),
-    },
-    {
-        "id": "morgan_freeman", "name": "Morgan Freeman",
-        "aliases": [], "categories": ["actor"],
-        "popularity_score": 93,
-        "attributes": _acting_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=1.0,
-            known_for_movies=1.0, known_for_television=0.2,
-            has_won_oscar=1.0, known_for_comedy=0.1, known_for_drama_only=0.8,
-            peak_era_90s=0.8, peak_era_2000s=0.7, uses_stage_name=0.0,
-            does_voice_acting=0.7, is_host=0.2,
-            is_historical_figure=0.1,
-        ),
-    },
-    {
-        "id": "cate_blanchett", "name": "Cate Blanchett",
-        "aliases": ["Catherine Elise Blanchett"], "categories": ["actor"],
-        "popularity_score": 91,
-        "attributes": _acting_base(
-            is_female=1.0, from_north_america=0.0, from_europe=0.0,  # Australian
-            is_american=0.0, age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.2,
-            has_won_oscar=1.0, associated_with_marvel=0.4, associated_with_disney=0.3,
-            known_for_comedy=0.1, known_for_drama_only=0.8,
-            peak_era_2000s=0.8, peak_era_90s=0.3, uses_stage_name=0.0,
-            does_voice_acting=0.3,
-        ),
-    },
-    {
-        "id": "samuel_l_jackson", "name": "Samuel L. Jackson",
-        "aliases": ["Samuel Leroy Jackson"], "categories": ["actor"],
-        "popularity_score": 94,
-        "attributes": _acting_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=1.0,
-            known_for_movies=1.0, known_for_television=0.2,
-            has_won_oscar=0.0, associated_with_marvel=1.0, associated_with_disney=0.6,
-            known_for_superhero_role=0.6,
-            known_for_comedy=0.3, known_for_drama_only=0.3,
-            peak_era_90s=0.9, peak_era_2000s=0.8, uses_stage_name=0.0,
-            does_voice_acting=0.6,
-        ),
-    },
-    {
-        "id": "viola_davis", "name": "Viola Davis",
-        "aliases": [], "categories": ["actor"],
-        "popularity_score": 90,
-        "attributes": _acting_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.6,
-            has_won_oscar=1.0, known_for_comedy=0.0, known_for_drama_only=0.9,
-            peak_era_2000s=1.0, uses_stage_name=0.0,
-            is_author=0.2,
-        ),
-    },
-    {
-        "id": "jake_gyllenhaal", "name": "Jake Gyllenhaal",
-        "aliases": ["Jacob Benjamin Gyllenhaal"], "categories": ["actor"],
-        "popularity_score": 90,
-        "attributes": _acting_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0, is_swedish=0.2,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.0,
-            associated_with_marvel=0.4, known_for_superhero_role=0.3,
-            has_won_oscar=0.0, known_for_comedy=0.1, known_for_drama_only=0.7,
-            peak_era_2000s=0.9, peak_era_90s=0.1, uses_stage_name=0.0,
-        ),
-    },
-    {
-        "id": "anne_hathaway", "name": "Anne Hathaway",
-        "aliases": ["Anne Jacqueline Hathaway"], "categories": ["actor"],
-        "popularity_score": 91,
-        "attributes": _acting_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=1.0, known_for_television=0.1,
-            has_won_oscar=1.0, associated_with_disney=0.4,
-            known_for_comedy=0.4, known_for_drama_only=0.3,
-            peak_era_2000s=0.9, uses_stage_name=0.0,
-            is_singer=0.3, does_voice_acting=0.3, is_host=0.1,
-        ),
-    },
-    {
-        "id": "benedict_cumberbatch", "name": "Benedict Cumberbatch",
-        "aliases": ["Benedict Timothy Carlton Cumberbatch"], "categories": ["actor"],
-        "popularity_score": 91,
-        "attributes": _acting_base(
-            is_female=0.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # British
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=0.8, known_for_television=0.7,
-            known_for_superhero_role=0.8, associated_with_marvel=1.0,
-            associated_with_disney=0.5, has_won_oscar=0.0,
-            known_for_comedy=0.1, known_for_drama_only=0.7,
-            peak_era_2000s=1.0, uses_stage_name=0.0,
-            does_voice_acting=0.5,
-        ),
-    },
-    {
-        "id": "pedro_pascal", "name": "Pedro Pascal",
-        "aliases": ["Jose Pedro Balmaceda Pascal"], "categories": ["actor"],
-        "popularity_score": 91,
-        "attributes": _acting_base(
-            is_female=0.0, from_north_america=0.0, from_europe=0.0,  # Chilean-American
-            is_american=0.5,  # dual nationality
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            known_for_movies=0.6, known_for_television=1.0,
-            associated_with_disney=0.7,  # The Mandalorian
-            has_won_oscar=0.0, known_for_comedy=0.2, known_for_drama_only=0.6,
-            peak_era_2000s=1.0, uses_stage_name=0.0,
-            does_voice_acting=0.3, known_for_social_media=0.4,
-        ),
-    },
-]
-
-# ─── SPORT (24) ────────────────────────────────────────────────────────
-
-SPORT_ENTITIES = [
-    {
-        "id": "novak_djokovic", "name": "Novak Djokovic",
-        "aliases": ["Nole"], "categories": ["athlete", "tennis_player"],
-        "popularity_score": 93,
-        "attributes": _sport_base(
-            is_female=0.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # Serbian
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_solo_sport=1.0, plays_team_sport=0.0,
-            is_tennis_player=1.0, has_won_major_championship=1.0,
-            peak_era_2000s=1.0,
-        ),
-    },
-    {
-        "id": "naomi_osaka", "name": "Naomi Osaka",
-        "aliases": [], "categories": ["athlete", "tennis_player"],
-        "popularity_score": 88,
-        "attributes": _sport_base(
-            is_female=1.0, from_north_america=0.0, from_europe=0.0,  # Japanese
-            is_american=0.0,
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            plays_solo_sport=1.0, plays_team_sport=0.0,
-            is_tennis_player=1.0, has_won_major_championship=1.0,
-            peak_era_2000s=1.0, known_for_social_media=0.5,
-            is_business_person=0.3,
-        ),
-    },
-    {
-        "id": "usain_bolt", "name": "Usain Bolt",
-        "aliases": ["Lightning Bolt"], "categories": ["athlete"],
-        "popularity_score": 92,
-        "attributes": _sport_base(
-            is_female=0.0, from_north_america=0.0, from_europe=0.0,  # Jamaican
-            is_american=0.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_solo_sport=1.0, plays_team_sport=0.0,
-            has_won_major_championship=1.0,
-            peak_era_2000s=1.0, known_by_single_name=0.0,
-            is_historical_figure=0.2,
-        ),
-    },
-    {
-        "id": "simone_biles", "name": "Simone Biles",
-        "aliases": ["Simone Arianne Biles"], "categories": ["athlete"],
-        "popularity_score": 91,
-        "attributes": _sport_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            plays_solo_sport=1.0, plays_team_sport=0.2,
-            has_won_major_championship=1.0,
-            peak_era_2000s=1.0, known_for_social_media=0.4,
-        ),
-    },
-    {
-        "id": "neymar", "name": "Neymar",
-        "aliases": ["Neymar da Silva Santos Junior", "Neymar Jr"], "categories": ["athlete", "soccer_player"],
-        "popularity_score": 93,
-        "attributes": _sport_base(
-            is_female=0.0, from_north_america=0.0, from_europe=0.0,  # Brazilian
-            is_american=0.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_team_sport=1.0, plays_solo_sport=0.0,
-            is_soccer_player=1.0, has_won_major_championship=0.6,
-            peak_era_2000s=1.0, known_by_single_name=1.0,
-            known_for_social_media=0.6,
-        ),
-    },
-    {
-        "id": "kylian_mbappe", "name": "Kylian Mbappe",
-        "aliases": ["Kylian Mbappe Lottin"], "categories": ["athlete", "soccer_player"],
-        "popularity_score": 93,
-        "attributes": _sport_base(
-            is_female=0.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # French
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            plays_team_sport=1.0, plays_solo_sport=0.0,
-            is_soccer_player=1.0, has_won_major_championship=1.0,  # World Cup 2018
-            peak_era_2000s=1.0, known_for_social_media=0.4,
-        ),
-    },
-    {
-        "id": "patrick_mahomes", "name": "Patrick Mahomes",
-        "aliases": ["Patrick Lavon Mahomes II"], "categories": ["athlete"],
-        "popularity_score": 91,
-        "attributes": _sport_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_team_sport=1.0, plays_solo_sport=0.0,
-            has_won_major_championship=1.0,
-            peak_era_2000s=1.0,
-        ),
-    },
-    {
-        "id": "stephen_curry", "name": "Stephen Curry",
-        "aliases": ["Wardell Stephen Curry II", "Steph Curry"], "categories": ["athlete", "basketball_player"],
-        "popularity_score": 93,
-        "attributes": _sport_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_team_sport=1.0, plays_solo_sport=0.0,
-            is_basketball_player=1.0, has_won_major_championship=1.0,
-            peak_era_2000s=1.0,
-        ),
-    },
-    {
-        "id": "tom_brady", "name": "Tom Brady",
-        "aliases": ["Thomas Edward Patrick Brady Jr."], "categories": ["athlete"],
-        "popularity_score": 94,
-        "attributes": _sport_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_team_sport=1.0, plays_solo_sport=0.0,
-            has_won_major_championship=1.0,
-            peak_era_2000s=1.0, peak_era_90s=0.0,
-            is_business_person=0.4, known_for_social_media=0.3,
-            is_host=0.1,
-        ),
-    },
-    {
-        "id": "mike_tyson", "name": "Mike Tyson",
-        "aliases": ["Michael Gerard Tyson", "Iron Mike"], "categories": ["athlete"],
-        "popularity_score": 91,
-        "attributes": _sport_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            plays_solo_sport=1.0, plays_team_sport=0.0,
-            has_won_major_championship=1.0,
-            peak_era_90s=1.0, peak_era_2000s=0.1,
-            is_actor=0.2, known_for_movies=0.2, known_for_television=0.2,
-            is_internet_personality=0.2, known_for_social_media=0.3,
-            is_historical_figure=0.3,
-        ),
-    },
-    {
-        "id": "tiger_woods", "name": "Tiger Woods",
-        "aliases": ["Eldrick Tont Woods"], "categories": ["athlete"],
-        "popularity_score": 93,
-        "attributes": _sport_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_solo_sport=1.0, plays_team_sport=0.0,
-            has_won_major_championship=1.0,
-            peak_era_2000s=0.8, peak_era_90s=0.7,
-            is_business_person=0.3, is_historical_figure=0.2,
-        ),
-    },
-    {
-        "id": "michael_phelps", "name": "Michael Phelps",
-        "aliases": ["Michael Fred Phelps II"], "categories": ["athlete"],
-        "popularity_score": 91,
-        "attributes": _sport_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_solo_sport=1.0, plays_team_sport=0.1,
-            has_won_major_championship=1.0,
-            peak_era_2000s=1.0, peak_era_90s=0.0,
-            is_historical_figure=0.2,
-        ),
-    },
-    {
-        "id": "connor_mcgregor", "name": "Conor McGregor",
-        "aliases": ["The Notorious"], "categories": ["athlete"],
-        "popularity_score": 91,
-        "attributes": _sport_base(
-            is_female=0.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # Irish
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_solo_sport=1.0, plays_team_sport=0.0,
-            has_won_major_championship=1.0,
-            peak_era_2000s=1.0,
-            is_business_person=0.6, known_for_social_media=0.6,
-            is_internet_personality=0.2, is_actor=0.1,
-        ),
-    },
-    {
-        "id": "alex_morgan", "name": "Alex Morgan",
-        "aliases": ["Alexandra Patricia Morgan Carrasco"], "categories": ["athlete", "soccer_player"],
-        "popularity_score": 87,
-        "attributes": _sport_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_team_sport=1.0, plays_solo_sport=0.0,
-            is_soccer_player=1.0, has_won_major_championship=1.0,
-            peak_era_2000s=1.0,
-            is_author=0.2, known_for_social_media=0.3,
-        ),
-    },
-    {
-        "id": "megan_rapinoe", "name": "Megan Rapinoe",
-        "aliases": [], "categories": ["athlete", "soccer_player"],
-        "popularity_score": 87,
-        "attributes": _sport_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_team_sport=1.0, plays_solo_sport=0.0,
-            is_soccer_player=1.0, has_won_major_championship=1.0,
-            peak_era_2000s=1.0,
-            is_politician=0.1, known_for_social_media=0.4,
-        ),
-    },
-    {
-        "id": "shaquille_oneal", "name": "Shaquille O'Neal",
-        "aliases": ["Shaq"], "categories": ["athlete", "basketball_player"],
-        "popularity_score": 92,
-        "attributes": _sport_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            plays_team_sport=1.0, plays_solo_sport=0.0,
-            is_basketball_player=1.0, has_won_major_championship=1.0,
-            peak_era_90s=0.7, peak_era_2000s=0.8,
-            known_by_single_name=0.8,
-            is_actor=0.3, known_for_movies=0.2, known_for_television=0.4,
-            is_host=0.3, is_comedian=0.2, is_business_person=0.6,
-            is_rapper=0.2, is_musician=0.1,
-            known_for_social_media=0.3, is_internet_personality=0.2,
-        ),
-    },
-    {
-        "id": "kobe_bryant", "name": "Kobe Bryant",
-        "aliases": ["Black Mamba", "Kobe Bean Bryant"], "categories": ["athlete", "basketball_player"],
-        "popularity_score": 95,
-        "attributes": _sport_base(
-            is_alive=0.0,  # deceased 2020
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_team_sport=1.0, plays_solo_sport=0.0,
-            is_basketball_player=1.0, has_won_major_championship=1.0,
-            peak_era_90s=0.4, peak_era_2000s=1.0,
-            is_business_person=0.3, is_author=0.2,
-            has_won_oscar=1.0,  # animated short "Dear Basketball"
-            is_historical_figure=0.6,
-        ),
-    },
-    {
-        "id": "michael_jordan", "name": "Michael Jordan",
-        "aliases": ["MJ", "Air Jordan", "His Airness"], "categories": ["athlete", "basketball_player"],
-        "popularity_score": 96,
-        "attributes": _sport_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            plays_team_sport=1.0, plays_solo_sport=0.0,
-            is_basketball_player=1.0, has_won_major_championship=1.0,
-            peak_era_90s=1.0, peak_era_2000s=0.1,
-            is_business_person=1.0, is_actor=0.2, known_for_movies=0.3,
-            is_historical_figure=0.7,
-        ),
-    },
-    {
-        "id": "wayne_gretzky", "name": "Wayne Gretzky",
-        "aliases": ["The Great One"], "categories": ["athlete"],
-        "popularity_score": 89,
-        "attributes": _sport_base(
-            is_female=0.0, from_north_america=1.0, is_american=0.0,  # Canadian
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            plays_team_sport=1.0, plays_solo_sport=0.0,
-            has_won_major_championship=1.0,
-            peak_era_90s=0.6, peak_era_2000s=0.0,
-            is_historical_figure=0.6,
-        ),
-    },
-    {
-        "id": "muhammad_ali", "name": "Muhammad Ali",
-        "aliases": ["Cassius Marcellus Clay Jr.", "The Greatest"], "categories": ["athlete"],
-        "popularity_score": 95,
-        "attributes": _sport_base(
-            is_alive=0.0,  # deceased 2016
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_solo_sport=1.0, plays_team_sport=0.0,
-            has_won_major_championship=1.0,
-            peak_era_90s=0.0, peak_era_2000s=0.0,
-            uses_stage_name=1.0,
-            is_historical_figure=1.0, is_politician=0.2,
-            is_author=0.2,
-        ),
-    },
-    {
-        "id": "venus_williams", "name": "Venus Williams",
-        "aliases": ["Venus Ebony Starr Williams"], "categories": ["athlete", "tennis_player"],
-        "popularity_score": 89,
-        "attributes": _sport_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_solo_sport=1.0, plays_team_sport=0.1,
-            is_tennis_player=1.0, has_won_major_championship=1.0,
-            peak_era_2000s=0.7, peak_era_90s=0.4,
-            is_business_person=0.4,
-        ),
-    },
-    {
-        "id": "rafael_nadal", "name": "Rafael Nadal",
-        "aliases": ["Rafa", "Rafael Nadal Parera"], "categories": ["athlete", "tennis_player"],
-        "popularity_score": 93,
-        "attributes": _sport_base(
-            is_female=0.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # Spanish
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_solo_sport=1.0, plays_team_sport=0.0,
-            is_tennis_player=1.0, has_won_major_championship=1.0,
-            peak_era_2000s=1.0,
-            is_historical_figure=0.1,
-        ),
-    },
-    {
-        "id": "max_verstappen", "name": "Max Verstappen",
-        "aliases": ["Max Emilian Verstappen"], "categories": ["athlete", "racing_driver"],
-        "popularity_score": 90,
-        "attributes": _sport_base(
-            is_female=0.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # Dutch-Belgian
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            plays_solo_sport=1.0, plays_team_sport=0.0,
-            is_racing_driver=1.0, has_won_major_championship=1.0,
-            peak_era_2000s=1.0,
-            known_for_social_media=0.3, is_gaming_creator=0.2,
-        ),
-    },
-    {
-        "id": "luka_modric", "name": "Luka Modric",
-        "aliases": [], "categories": ["athlete", "soccer_player"],
-        "popularity_score": 89,
-        "attributes": _sport_base(
-            is_female=0.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # Croatian
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            plays_team_sport=1.0, plays_solo_sport=0.0,
-            is_soccer_player=1.0, has_won_major_championship=1.0,
-            peak_era_2000s=1.0,
-        ),
-    },
-]
-
-# ─── POLITICS (24) ─────────────────────────────────────────────────────
-
-POLITICS_ENTITIES = [
-    {
-        "id": "hillary_clinton", "name": "Hillary Clinton",
-        "aliases": ["Hillary Rodham Clinton", "Hillary Diane Rodham Clinton"],
-        "categories": ["politician", "author"],
-        "popularity_score": 92,
-        "attributes": _politics_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=1.0,
-            is_democrat=1.0, is_republican=0.0,
-            is_head_of_state=0.0, has_held_elected_office=1.0,
-            held_office_pre_2000=0.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-            is_author=0.6, is_historical_figure=0.4,
-        ),
-    },
-    {
-        "id": "bernie_sanders", "name": "Bernie Sanders",
-        "aliases": ["Bernard Sanders"], "categories": ["politician"],
-        "popularity_score": 89,
-        "attributes": _politics_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=1.0,
-            is_democrat=0.7,  # Independent, caucuses with Democrats
-            is_republican=0.0,
-            is_head_of_state=0.0, has_held_elected_office=1.0,
-            held_office_pre_2000=1.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-            is_author=0.4, is_internet_personality=0.2,
-            known_for_social_media=0.4,
-        ),
-    },
-    {
-        "id": "kamala_harris", "name": "Kamala Harris",
-        "aliases": ["Kamala Devi Harris"], "categories": ["politician"],
-        "popularity_score": 93,
-        "attributes": _politics_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=1.0, is_republican=0.0,
-            is_head_of_state=0.0,  # VP not head of state
-            has_held_elected_office=1.0,
-            held_office_pre_2000=0.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-            is_author=0.3,
-        ),
-    },
-    {
-        "id": "emmanuel_macron", "name": "Emmanuel Macron",
-        "aliases": [], "categories": ["politician"],
-        "popularity_score": 90,
-        "attributes": _politics_base(
-            is_female=0.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # French
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=0.0, is_republican=0.0,
-            is_head_of_state=1.0, has_held_elected_office=1.0,
-            held_office_pre_2000=0.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-        ),
-    },
-    {
-        "id": "justin_trudeau", "name": "Justin Trudeau",
-        "aliases": ["Justin Pierre James Trudeau"], "categories": ["politician"],
-        "popularity_score": 89,
-        "attributes": _politics_base(
-            is_female=0.0, from_north_america=1.0, is_american=0.0,  # Canadian
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=0.0, is_republican=0.0,
-            is_head_of_state=1.0, has_held_elected_office=1.0,
-            held_office_pre_2000=0.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-            known_for_social_media=0.4,
-        ),
-    },
-    {
-        "id": "boris_johnson", "name": "Boris Johnson",
-        "aliases": ["Alexander Boris de Pfeffel Johnson"], "categories": ["politician", "author"],
-        "popularity_score": 88,
-        "attributes": _politics_base(
-            is_female=0.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # British (born in US but British politician)
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=0.0, is_republican=0.0,
-            is_head_of_state=0.8,  # was PM
-            has_held_elected_office=1.0,
-            held_office_pre_2000=0.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-            is_author=0.5, is_comedian=0.2,
-        ),
-    },
-    {
-        "id": "xi_jinping", "name": "Xi Jinping",
-        "aliases": [], "categories": ["politician"],
-        "popularity_score": 92,
-        "attributes": _politics_base(
-            is_female=0.0, from_north_america=0.0, from_europe=0.0,  # Chinese
-            is_american=0.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=0.0, is_republican=0.0,
-            is_head_of_state=1.0, has_held_elected_office=0.3,  # not elected in Western sense
-            held_office_pre_2000=0.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-        ),
-    },
-    {
-        "id": "jacinda_ardern", "name": "Jacinda Ardern",
-        "aliases": ["Dame Jacinda Kate Laurell Ardern"], "categories": ["politician"],
-        "popularity_score": 87,
-        "attributes": _politics_base(
-            is_female=1.0, from_north_america=0.0, from_europe=0.0,  # New Zealand
-            is_american=0.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=0.0, is_republican=0.0,
-            is_head_of_state=0.8,  # was PM
-            has_held_elected_office=1.0,
-            held_office_pre_2000=0.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-            known_for_social_media=0.3,
-        ),
-    },
-    {
-        "id": "queen_elizabeth", "name": "Queen Elizabeth II",
-        "aliases": ["Elizabeth Alexandra Mary Windsor"], "categories": ["royalty", "head_of_state"],
-        "popularity_score": 95,
-        "attributes": _politics_base(
-            is_alive=0.0,  # deceased 2022
-            is_female=1.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # British
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=0.0, is_republican=0.0,
-            is_royalty=1.0, is_head_of_state=1.0,
-            has_held_elected_office=0.0,
-            held_office_pre_2000=0.0,  # not elected office
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-            is_historical_figure=1.0, is_politician=0.3,  # monarch, not politician per se
-        ),
-    },
-    {
-        "id": "prince_william", "name": "Prince William",
-        "aliases": ["William Arthur Philip Louis", "Prince of Wales"],
-        "categories": ["royalty"],
-        "popularity_score": 89,
-        "attributes": _politics_base(
-            is_female=0.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # British
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=0.0, is_republican=0.0,
-            is_royalty=1.0, is_head_of_state=0.0,
-            has_held_elected_office=0.0,
-            held_office_pre_2000=0.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-            is_politician=0.1,
-            known_by_single_name=0.0,
-        ),
-    },
-    {
-        "id": "prince_harry", "name": "Prince Harry",
-        "aliases": ["Henry Charles Albert David", "Duke of Sussex"],
-        "categories": ["royalty"],
-        "popularity_score": 89,
-        "attributes": _politics_base(
-            is_female=0.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # British
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=0.0, is_republican=0.0,
-            is_royalty=1.0, is_head_of_state=0.0,
-            has_held_elected_office=0.0,
-            held_office_pre_2000=0.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-            is_politician=0.1,
-            is_author=0.5, known_for_social_media=0.3,
-            known_for_reality_tv=0.3, is_internet_personality=0.2,
-        ),
-    },
-    {
-        "id": "michelle_obama", "name": "Michelle Obama",
-        "aliases": ["Michelle LaVaughn Robinson Obama"], "categories": ["politician", "author"],
-        "popularity_score": 92,
-        "attributes": _politics_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=1.0, is_republican=0.0,
-            is_head_of_state=0.0, has_held_elected_office=0.0,
-            held_office_pre_2000=0.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-            is_politician=0.4,  # First Lady, not really a politician
-            is_author=0.8, known_for_social_media=0.4,
-        ),
-    },
-    {
-        "id": "alexandria_ocasio_cortez", "name": "Alexandria Ocasio-Cortez",
-        "aliases": ["AOC"], "categories": ["politician"],
-        "popularity_score": 88,
-        "attributes": _politics_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=1.0, is_republican=0.0,
-            is_head_of_state=0.0, has_held_elected_office=1.0,
-            held_office_pre_2000=0.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-            known_for_social_media=0.8, is_internet_personality=0.3,
-            known_for_streaming=0.2,
-            uses_stage_name=0.0, known_by_single_name=0.0,
-        ),
-    },
-    {
-        "id": "nelson_mandela", "name": "Nelson Mandela",
-        "aliases": ["Madiba", "Nelson Rolihlahla Mandela"], "categories": ["politician"],
-        "popularity_score": 95,
-        "attributes": _politics_base(
-            is_alive=0.0,  # deceased 2013
-            is_female=0.0, from_north_america=0.0, from_europe=0.0,  # South African
-            is_american=0.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=0.0, is_republican=0.0,
-            is_head_of_state=1.0, has_held_elected_office=1.0,
-            held_office_pre_2000=1.0,
-            is_us_president=0.0, has_won_nobel_prize=1.0,
-            is_historical_figure=1.0, is_author=0.5,
-        ),
-    },
-    {
-        "id": "jfk", "name": "John F. Kennedy",
-        "aliases": ["JFK", "John Fitzgerald Kennedy", "Jack Kennedy"], "categories": ["politician"],
-        "popularity_score": 93,
-        "attributes": _politics_base(
-            is_alive=0.0,  # deceased 1963
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=1.0, is_republican=0.0,
-            is_head_of_state=1.0, has_held_elected_office=1.0,
-            held_office_pre_2000=1.0,
-            is_us_president=1.0, has_won_nobel_prize=0.0,
-            is_historical_figure=1.0, is_author=0.4,
-            known_by_single_name=0.0,
-        ),
-    },
-    {
-        "id": "abraham_lincoln", "name": "Abraham Lincoln",
-        "aliases": ["Honest Abe"], "categories": ["politician"],
-        "popularity_score": 93,
-        "attributes": _politics_base(
-            is_alive=0.0,  # deceased 1865
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=0.0, is_republican=1.0,
-            is_head_of_state=1.0, has_held_elected_office=1.0,
-            held_office_pre_2000=1.0,
-            is_us_president=1.0, has_won_nobel_prize=0.0,
-            is_historical_figure=1.0, is_author=0.3,
-        ),
-    },
-    {
-        "id": "winston_churchill", "name": "Winston Churchill",
-        "aliases": ["Sir Winston Leonard Spencer Churchill"], "categories": ["politician", "author"],
-        "popularity_score": 92,
-        "attributes": _politics_base(
-            is_alive=0.0,  # deceased 1965
-            is_female=0.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # British
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=0.0, is_republican=0.0,
-            is_head_of_state=0.8,  # PM
-            has_held_elected_office=1.0,
-            held_office_pre_2000=1.0,
-            is_us_president=0.0, has_won_nobel_prize=1.0,  # Literature
-            is_historical_figure=1.0, is_author=0.8,
-        ),
-    },
-    {
-        "id": "margaret_thatcher", "name": "Margaret Thatcher",
-        "aliases": ["The Iron Lady", "Margaret Hilda Thatcher"], "categories": ["politician"],
-        "popularity_score": 90,
-        "attributes": _politics_base(
-            is_alive=0.0,  # deceased 2013
-            is_female=1.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # British
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=0.0, is_republican=0.0,
-            is_head_of_state=0.8,  # PM
-            has_held_elected_office=1.0,
-            held_office_pre_2000=1.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-            is_historical_figure=1.0, is_author=0.3,
-        ),
-    },
-    {
-        "id": "george_w_bush", "name": "George W. Bush",
-        "aliases": ["George Walker Bush", "Dubya"], "categories": ["politician"],
-        "popularity_score": 90,
-        "attributes": _politics_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=1.0,
-            is_democrat=0.0, is_republican=1.0,
-            is_head_of_state=1.0, has_held_elected_office=1.0,
-            held_office_pre_2000=0.3,  # Governor before 2000
-            is_us_president=1.0, has_won_nobel_prize=0.0,
-            is_historical_figure=0.6, is_author=0.3,
-        ),
-    },
-    {
-        "id": "bill_clinton", "name": "Bill Clinton",
-        "aliases": ["William Jefferson Clinton"], "categories": ["politician", "author"],
-        "popularity_score": 91,
-        "attributes": _politics_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=1.0,
-            is_democrat=1.0, is_republican=0.0,
-            is_head_of_state=1.0, has_held_elected_office=1.0,
-            held_office_pre_2000=1.0,
-            is_us_president=1.0, has_won_nobel_prize=0.0,
-            is_historical_figure=0.5, is_author=0.5,
-            is_musician=0.1,  # plays saxophone
-        ),
-    },
-    {
-        "id": "al_gore", "name": "Al Gore",
-        "aliases": ["Albert Arnold Gore Jr."], "categories": ["politician", "author"],
-        "popularity_score": 86,
-        "attributes": _politics_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=1.0,
-            is_democrat=1.0, is_republican=0.0,
-            is_head_of_state=0.0, has_held_elected_office=1.0,
-            held_office_pre_2000=1.0,
-            is_us_president=0.0, has_won_nobel_prize=1.0,  # Peace Prize 2007
-            is_historical_figure=0.3, is_author=0.6,
-            is_business_person=0.4,
-        ),
-    },
-    {
-        "id": "ruth_bader_ginsburg", "name": "Ruth Bader Ginsburg",
-        "aliases": ["RBG", "The Notorious RBG"], "categories": ["politician"],
-        "popularity_score": 88,
-        "attributes": _politics_base(
-            is_alive=0.0,  # deceased 2020
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=0.6,  # appointed by Clinton, liberal but judges aren't party members
-            is_republican=0.0,
-            is_head_of_state=0.0, has_held_elected_office=0.0,
-            held_office_pre_2000=0.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-            is_politician=0.3,  # judge, not politician
-            is_historical_figure=0.7, is_author=0.4,
-            known_for_social_media=0.3,  # became internet icon
-            is_internet_personality=0.1,
-        ),
-    },
-    {
-        "id": "volodymyr_zelensky", "name": "Volodymyr Zelensky",
-        "aliases": ["Volodymyr Oleksandrovych Zelenskyy"], "categories": ["politician", "actor"],
-        "popularity_score": 91,
-        "attributes": _politics_base(
-            is_female=0.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # Ukrainian
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            is_democrat=0.0, is_republican=0.0,
-            is_head_of_state=1.0, has_held_elected_office=1.0,
-            held_office_pre_2000=0.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-            is_actor=0.6, is_comedian=0.5, known_for_television=0.5,
-            known_for_comedy=0.4, known_for_social_media=0.5,
-        ),
-    },
-    {
-        "id": "pope_francis", "name": "Pope Francis",
-        "aliases": ["Jorge Mario Bergoglio"], "categories": ["head_of_state", "religious_leader"],
-        "popularity_score": 92,
-        "attributes": _politics_base(
-            is_female=0.0, from_north_america=0.0, from_europe=0.0,  # Argentine
-            is_american=0.0,
-            age_over_50=1.0, age_under_30=0.0, age_over_75=1.0,
-            is_democrat=0.0, is_republican=0.0,
-            is_head_of_state=1.0,  # head of Vatican City
-            has_held_elected_office=0.0,  # elected by conclave but not public office
-            held_office_pre_2000=0.0,
-            is_us_president=0.0, has_won_nobel_prize=0.0,
-            is_politician=0.3,  # religious leader more than politician
-            is_author=0.6, is_historical_figure=0.5,
-            known_by_single_name=0.0,
-            uses_stage_name=1.0,  # papal name
-            known_for_social_media=0.4,
-        ),
-    },
-]
-
-# ─── INTERNET (24) ─────────────────────────────────────────────────────
-
-INTERNET_ENTITIES = [
-    {
-        "id": "markiplier", "name": "Markiplier",
-        "aliases": ["Mark Edward Fischbach"], "categories": ["internet_personality", "streamer"],
-        "popularity_score": 89,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            uses_stage_name=1.0, known_for_streaming=0.8,
-            is_gaming_creator=1.0, is_challenge_creator=0.2,
-            subscriber_count_tier=0.8,  # ~36M subs
-            known_for_comedy=0.6, is_comedian=0.3,
-            is_actor=0.2, is_business_person=0.3,
-            peak_era_2000s=1.0,
-        ),
-    },
-    {
-        "id": "ninja_tyler", "name": "Ninja",
-        "aliases": ["Tyler Blevins", "Richard Tyler Blevins"],
-        "categories": ["internet_personality", "streamer"],
-        "popularity_score": 88,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            uses_stage_name=1.0, known_for_streaming=1.0,
-            is_gaming_creator=1.0, is_challenge_creator=0.1,
-            subscriber_count_tier=0.6,  # ~24M subs
-            known_by_single_name=1.0,
-            peak_era_2000s=1.0,
-            is_athlete=0.1,
-        ),
-    },
-    {
-        "id": "pokimane", "name": "Pokimane",
-        "aliases": ["Imane Anys"], "categories": ["internet_personality", "streamer"],
-        "popularity_score": 87,
-        "attributes": _internet_base(
-            is_female=1.0, from_north_america=1.0, is_american=0.0,  # Moroccan-Canadian
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            uses_stage_name=1.0, known_for_streaming=1.0,
-            is_gaming_creator=0.8, is_challenge_creator=0.1,
-            subscriber_count_tier=0.5,  # ~9M subs
-            known_by_single_name=1.0,
-            peak_era_2000s=1.0,
-            is_business_person=0.4,
-        ),
-    },
-    {
-        "id": "dream_minecraft", "name": "Dream",
-        "aliases": ["Clay"], "categories": ["internet_personality", "streamer"],
-        "popularity_score": 86,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            uses_stage_name=1.0, known_for_streaming=0.7,
-            is_gaming_creator=1.0, is_challenge_creator=0.6,
-            subscriber_count_tier=0.7,  # ~32M subs
-            known_by_single_name=1.0,
-            peak_era_2000s=1.0,
-        ),
-    },
-    {
-        "id": "addison_rae", "name": "Addison Rae",
-        "aliases": ["Addison Rae Easterling"], "categories": ["internet_personality", "social_media"],
-        "popularity_score": 86,
-        "attributes": _internet_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            uses_stage_name=0.0, known_for_streaming=0.2,
-            is_gaming_creator=0.0, is_challenge_creator=0.7,
-            subscriber_count_tier=0.1,
-            peak_era_2000s=1.0,
-            is_actor=0.2, is_singer=0.2, is_musician=0.2,
-            known_for_reality_tv=0.2,
-        ),
-    },
-    {
-        "id": "david_dobrik", "name": "David Dobrik",
-        "aliases": [], "categories": ["internet_personality"],
-        "popularity_score": 86,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=0.5,  # Slovak-born, US-raised
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            uses_stage_name=0.0, known_for_streaming=0.2,
-            is_gaming_creator=0.0, is_challenge_creator=0.7,
-            subscriber_count_tier=0.6,  # ~18M subs
-            peak_era_2000s=1.0,
-            known_for_comedy=0.6, is_comedian=0.3,
-            is_business_person=0.3,
-        ),
-    },
-    {
-        "id": "emma_chamberlain", "name": "Emma Chamberlain",
-        "aliases": [], "categories": ["internet_personality", "social_media"],
-        "popularity_score": 86,
-        "attributes": _internet_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            uses_stage_name=0.0, known_for_streaming=0.1,
-            is_gaming_creator=0.0, is_challenge_creator=0.2,
-            subscriber_count_tier=0.6,  # ~12M subs
-            peak_era_2000s=1.0,
-            is_business_person=0.5,  # Chamberlain Coffee
-            is_host=0.2,
-        ),
-    },
-    {
-        "id": "james_charles", "name": "James Charles",
-        "aliases": ["James Charles Dickinson"], "categories": ["internet_personality", "social_media"],
-        "popularity_score": 85,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            uses_stage_name=0.0, known_for_streaming=0.2,
-            is_gaming_creator=0.0, is_challenge_creator=0.3,
-            subscriber_count_tier=0.6,  # ~24M subs
-            peak_era_2000s=1.0,
-            is_business_person=0.3,
-        ),
-    },
-    {
-        "id": "jeffree_star", "name": "Jeffree Star",
-        "aliases": ["Jeffrey Lynn Steininger Jr."], "categories": ["internet_personality", "business_person"],
-        "popularity_score": 85,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            uses_stage_name=1.0, known_for_streaming=0.2,
-            is_gaming_creator=0.0, is_challenge_creator=0.1,
-            subscriber_count_tier=0.6,  # ~16M subs
-            peak_era_2000s=1.0,
-            is_business_person=0.9, is_musician=0.2,
-            known_for_reality_tv=0.2,
-        ),
-    },
-    {
-        "id": "lilly_singh", "name": "Lilly Singh",
-        "aliases": ["Superwoman", "IISuperwomanII"], "categories": ["internet_personality", "comedian"],
-        "popularity_score": 85,
-        "attributes": _internet_base(
-            is_female=1.0, from_north_america=1.0, is_american=0.0,  # Canadian
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            uses_stage_name=1.0, known_for_streaming=0.1,
-            is_gaming_creator=0.0, is_challenge_creator=0.2,
-            subscriber_count_tier=0.6,  # ~15M subs
-            peak_era_2000s=1.0,
-            is_comedian=0.7, is_standup_comedian=0.3, known_for_comedy=0.8,
-            is_host=0.6, known_for_television=0.4,
-            is_author=0.3, is_actor=0.3,
-        ),
-    },
-    {
-        "id": "casey_neistat", "name": "Casey Neistat",
-        "aliases": [], "categories": ["internet_personality"],
-        "popularity_score": 85,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            uses_stage_name=0.0, known_for_streaming=0.1,
-            is_gaming_creator=0.0, is_challenge_creator=0.2,
-            subscriber_count_tier=0.6,  # ~12M subs
-            peak_era_2000s=1.0,
-            is_director=0.5, is_business_person=0.6,
-        ),
-    },
-    {
-        "id": "marques_brownlee", "name": "Marques Brownlee",
-        "aliases": ["MKBHD"], "categories": ["internet_personality"],
-        "popularity_score": 87,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            uses_stage_name=0.0, known_for_streaming=0.2,
-            is_gaming_creator=0.0, is_challenge_creator=0.0,
-            subscriber_count_tier=0.6,  # ~19M subs
-            peak_era_2000s=1.0,
-            is_business_person=0.4, is_athlete=0.2,  # ultimate frisbee
-        ),
-    },
-    {
-        "id": "sssniperwolf", "name": "SSSniperwolf",
-        "aliases": ["Alia Marie Shelesh", "Lia"], "categories": ["internet_personality"],
-        "popularity_score": 86,
-        "attributes": _internet_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            uses_stage_name=1.0, known_for_streaming=0.3,
-            is_gaming_creator=0.6, is_challenge_creator=0.4,
-            subscriber_count_tier=0.8,  # ~34M subs
-            peak_era_2000s=1.0,
-            known_for_comedy=0.3,
-        ),
-    },
-    {
-        "id": "ryan_kaji", "name": "Ryan Kaji",
-        "aliases": ["Ryan's World"], "categories": ["internet_personality"],
-        "popularity_score": 86,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            uses_stage_name=0.0, known_for_streaming=0.1,
-            is_gaming_creator=0.2, is_challenge_creator=0.5,
-            subscriber_count_tier=0.8,  # ~36M subs
-            peak_era_2000s=1.0,
-            known_for_television=0.3, is_business_person=0.3,
-        ),
-    },
-    {
-        "id": "dude_perfect", "name": "Dude Perfect",
-        "aliases": ["DP"], "categories": ["internet_personality"],
-        "popularity_score": 87,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            uses_stage_name=1.0, known_for_streaming=0.1,
-            is_gaming_creator=0.0, is_challenge_creator=1.0,
-            subscriber_count_tier=0.9,  # ~60M subs
-            peak_era_2000s=1.0,
-            is_athlete=0.3, known_for_comedy=0.4,
-            known_for_television=0.2,
-        ),
-    },
-    {
-        "id": "jake_paul", "name": "Jake Paul",
-        "aliases": ["Jake Joseph Paul"], "categories": ["internet_personality", "athlete"],
-        "popularity_score": 88,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            uses_stage_name=0.0, known_for_streaming=0.3,
-            is_gaming_creator=0.1, is_challenge_creator=0.5,
-            subscriber_count_tier=0.6,  # ~20M subs
-            peak_era_2000s=1.0,
-            is_athlete=0.5, is_wrestler=0.3,
-            known_for_comedy=0.3, is_actor=0.2,
-            known_for_television=0.2, is_business_person=0.5,
-            is_musician=0.1,
-        ),
-    },
-    {
-        "id": "ksi", "name": "KSI",
-        "aliases": ["Olajide Olayinka Williams Olatunji", "JJ Olatunji"],
-        "categories": ["internet_personality", "musician", "athlete"],
-        "popularity_score": 88,
-        "attributes": _internet_base(
-            is_female=0.0, from_europe=1.0, from_north_america=0.0,
-            is_american=0.0,  # British
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            uses_stage_name=1.0, known_for_streaming=0.5,
-            is_gaming_creator=0.7, is_challenge_creator=0.5,
-            subscriber_count_tier=0.6,  # ~24M subs (main + second)
-            known_by_single_name=1.0,
-            peak_era_2000s=1.0,
-            is_athlete=0.4, is_wrestler=0.2,
-            is_musician=0.6, is_rapper=0.6, is_singer=0.3,
-            is_business_person=0.6, is_actor=0.1,
-            known_for_comedy=0.4,
-        ),
-    },
-    {
-        "id": "ishowspeed", "name": "IShowSpeed",
-        "aliases": ["Darren Watkins Jr.", "Speed"], "categories": ["internet_personality", "streamer"],
-        "popularity_score": 87,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            uses_stage_name=1.0, known_for_streaming=1.0,
-            is_gaming_creator=0.8, is_challenge_creator=0.4,
-            subscriber_count_tier=0.7,  # ~27M subs
-            peak_era_2000s=1.0,
-            is_musician=0.2, is_singer=0.2,
-            known_for_comedy=0.4,
-        ),
-    },
-    {
-        "id": "kai_cenat", "name": "Kai Cenat",
-        "aliases": [], "categories": ["internet_personality", "streamer"],
-        "popularity_score": 88,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            uses_stage_name=0.0, known_for_streaming=1.0,
-            is_gaming_creator=0.5, is_challenge_creator=0.5,
-            subscriber_count_tier=0.4,  # ~7M YouTube subs (bigger on Twitch)
-            peak_era_2000s=1.0,
-            known_for_comedy=0.6, is_comedian=0.3,
-        ),
-    },
-    {
-        "id": "adin_ross", "name": "Adin Ross",
-        "aliases": [], "categories": ["internet_personality", "streamer"],
-        "popularity_score": 86,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            uses_stage_name=0.0, known_for_streaming=1.0,
-            is_gaming_creator=0.6, is_challenge_creator=0.3,
-            subscriber_count_tier=0.3,  # ~5M YouTube subs
-            peak_era_2000s=1.0,
-            known_for_comedy=0.3,
-            is_politician=0.0,  # political controversies but not a politician
-        ),
-    },
-    {
-        "id": "hasan_piker", "name": "Hasan Piker",
-        "aliases": ["HasanAbi"], "categories": ["internet_personality", "streamer"],
-        "popularity_score": 85,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            uses_stage_name=0.0, known_for_streaming=1.0,
-            is_gaming_creator=0.3, is_challenge_creator=0.0,
-            subscriber_count_tier=0.3,  # ~2M YouTube
-            peak_era_2000s=1.0,
-            is_politician=0.2,  # political commentator
-            is_comedian=0.2, known_for_comedy=0.3,
-            is_host=0.3,
-        ),
-    },
-    {
-        "id": "ludwig_ahgren", "name": "Ludwig",
-        "aliases": ["Ludwig Anders Ahgren"], "categories": ["internet_personality", "streamer"],
-        "popularity_score": 85,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            is_swedish=0.2,  # Swedish-American heritage
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            uses_stage_name=0.0, known_for_streaming=1.0,
-            is_gaming_creator=0.6, is_challenge_creator=0.4,
-            subscriber_count_tier=0.4,  # ~6M YouTube subs
-            known_by_single_name=0.8,
-            peak_era_2000s=1.0,
-            known_for_comedy=0.5, is_comedian=0.2,
-            is_host=0.5, is_business_person=0.3,
-        ),
-    },
-    {
-        "id": "valkyrae", "name": "Valkyrae",
-        "aliases": ["Rachell Hofstetter"], "categories": ["internet_personality", "streamer"],
-        "popularity_score": 85,
-        "attributes": _internet_base(
-            is_female=1.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=0.0, age_over_75=0.0,
-            uses_stage_name=1.0, known_for_streaming=1.0,
-            is_gaming_creator=1.0, is_challenge_creator=0.1,
-            subscriber_count_tier=0.3,  # ~4M YouTube subs
-            known_by_single_name=1.0,
-            peak_era_2000s=1.0,
-            is_business_person=0.3,
-        ),
-    },
-    {
-        "id": "corpse_husband", "name": "Corpse Husband",
-        "aliases": ["Corpse"], "categories": ["internet_personality", "musician"],
-        "popularity_score": 84,
-        "attributes": _internet_base(
-            is_female=0.0, from_north_america=1.0, is_american=1.0,
-            age_over_50=0.0, age_under_30=1.0, age_over_75=0.0,
-            uses_stage_name=1.0, known_for_streaming=0.5,
-            is_gaming_creator=0.6, is_challenge_creator=0.0,
-            subscriber_count_tier=0.4,  # ~8M YouTube subs
-            peak_era_2000s=1.0,
-            is_musician=0.5, is_singer=0.4,
-            known_by_single_name=0.0,
-        ),
-    },
-]
-
-
-ALL_NEW_ENTITIES = MUSIC_ENTITIES + ACTING_ENTITIES + SPORT_ENTITIES + POLITICS_ENTITIES + INTERNET_ENTITIES
-
-
-def validate_entities(entities):
-    """Validate that all entities have all 64 attributes."""
-    errors = []
-    for e in entities:
-        attrs = e["attributes"]
-        missing = set(ALL_ATTRIBUTES) - set(attrs.keys())
-        extra = set(attrs.keys()) - set(ALL_ATTRIBUTES)
-        if missing:
-            errors.append(f"{e['id']}: missing attributes: {missing}")
-        if extra:
-            errors.append(f"{e['id']}: extra attributes: {extra}")
-        for k, v in attrs.items():
-            if not isinstance(v, (int, float)):
-                errors.append(f"{e['id']}.{k}: value {v!r} is not a number")
-            elif v < 0.0 or v > 1.0:
-                errors.append(f"{e['id']}.{k}: value {v} out of range [0,1]")
-    if errors:
-        for err in errors:
-            print(f"  ERROR: {err}")
-        raise ValueError(f"{len(errors)} validation error(s)")
-    print(f"  All {len(entities)} entities validated OK ({len(ALL_ATTRIBUTES)} attributes each)")
-
-
-def generate_gold_answers(attrs):
-    """
-    Generate gold case answers from attribute values.
-    >= 0.75 -> "yes"
-    <= 0.25 -> "no"
-    Between 0.25 and 0.75 -> omitted (ambiguous)
-    """
+def entity_to_gold(entity):
     answers = {}
-    for attr, val in attrs.items():
-        if val >= 0.75:
-            answers[attr] = "yes"
-        elif val <= 0.25:
-            answers[attr] = "no"
-        # else: ambiguous, omit from gold answers
-    return answers
+    for k in ALL_ATTRS:
+        answers[k] = confidence_to_answer(entity["attributes"][k])
+    return {"target_entity_id": entity["id"], "answers": answers}
+
+
+# ── NEW ENTITIES ──────────────────────────────────────────────────────────
+# Format: (id, name, aliases, categories, popularity, attribute_overrides)
+# SKIP entries are placeholders for already-existing entities
+
+MUSICIANS = [
+    ("john_legend", "John Legend", ["John Roger Stephens"], ["musician", "singer"], 92,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "has_won_grammy": 1.0, "has_won_oscar": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "uses_stage_name": 1.0, "known_by_single_name": 0.0,
+      "peak_era_2000s": 0.7, "peak_era_2010s": 0.8, "peak_era_2020s": 0.4,
+      "is_activist": 0.5, "is_pop_star": 0.7}),
+
+    ("sam_smith", "Sam Smith", [], ["musician", "singer", "pop_star"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "has_won_grammy": 1.0, "has_won_oscar": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "lives_in_north_america": 0.0,
+      "is_pop_star": 0.9, "known_by_single_name": 0.0,
+      "peak_era_2010s": 0.9, "peak_era_2020s": 0.6}),
+
+    ("lizzo", "Lizzo", ["Melissa Viviane Jefferson"], ["musician", "singer", "rapper"], 90,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_rapper": 0.6, "has_won_grammy": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "is_pop_star": 0.8, "known_by_single_name": 1.0, "uses_stage_name": 1.0,
+      "is_activist": 0.6, "peak_era_2010s": 0.5, "peak_era_2020s": 0.9}),
+
+    ("stevie_wonder", "Stevie Wonder", ["Stevland Hardaway Morris"], ["musician", "singer"], 93,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "has_won_grammy": 1.0, "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0, "age_over_50": 1.0, "age_over_75": 1.0,
+      "uses_stage_name": 1.0, "known_by_single_name": 0.0,
+      "peak_era_90s": 0.3, "peak_era_2000s": 0.2, "is_activist": 0.5,
+      "is_pop_star": 0.6}),
+
+    ("kendrick_lamar", "Kendrick Lamar", ["Kendrick Lamar Duckworth"], ["musician", "rapper"], 94,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_rapper": 1.0,
+      "is_singer": 0.5, "has_won_grammy": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "known_by_single_name": 0.0, "peak_era_2010s": 0.9, "peak_era_2020s": 0.8,
+      "is_pop_star": 0.6}),
+
+    ("lana_del_rey", "Lana Del Rey", ["Elizabeth Woolridge Grant"], ["musician", "singer"], 90,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "uses_stage_name": 1.0, "known_by_single_name": 0.0,
+      "peak_era_2010s": 0.9, "peak_era_2020s": 0.6}),
+
+    ("miley_cyrus", "Miley Cyrus", ["Destiny Hope Cyrus"], ["musician", "singer", "actor"], 92,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_actor": 0.6, "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0, "has_won_grammy": 1.0,
+      "is_pop_star": 1.0, "known_by_single_name": 0.0,
+      "associated_with_disney": 1.0, "known_for_television": 0.7,
+      "has_acting_and_music_career": 1.0,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.7}),
+
+    ("pharrell_williams", "Pharrell Williams", [], ["musician", "singer"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "has_won_grammy": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "is_pop_star": 0.7, "is_business_person": 0.5,
+      "peak_era_2000s": 0.7, "peak_era_2010s": 0.8}),
+
+    ("j_balvin", "J Balvin", ["Jose Alvaro Osorio Balvin"], ["musician", "singer", "rapper"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_rapper": 0.6, "is_american": 0.0, "from_north_america": 0.0,
+      "lives_in_north_america": 1.0,
+      "has_won_grammy": 0.5, "is_pop_star": 0.8,
+      "uses_stage_name": 1.0,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.8,
+      "known_for_social_media": 0.6}),
+
+    ("rosalia", "Rosalia", ["Rosalia Vila Tobella"], ["musician", "singer"], 90,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "has_won_grammy": 1.0, "is_american": 0.0, "from_europe": 1.0,
+      "lives_in_north_america": 0.5, "is_pop_star": 0.8,
+      "known_by_single_name": 1.0,
+      "peak_era_2020s": 0.9}),
+
+    ("lil_nas_x", "Lil Nas X", ["Montero Lamar Hill"], ["musician", "rapper", "singer"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_rapper": 0.8,
+      "is_singer": 0.8, "has_won_grammy": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "is_pop_star": 0.8, "uses_stage_name": 1.0, "age_under_30": 1.0,
+      "known_for_social_media": 0.8, "is_internet_personality": 0.5,
+      "peak_era_2020s": 0.9, "is_activist": 0.4}),
+
+    ("bruce_springsteen", "Bruce Springsteen", ["The Boss"], ["musician", "singer"], 92,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "has_won_grammy": 1.0, "has_won_oscar": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "age_over_75": 1.0,
+      "peak_era_90s": 0.5, "peak_era_2000s": 0.4,
+      "is_activist": 0.4, "is_author": 0.3}),
+
+    ("tyler_the_creator", "Tyler, the Creator", ["Tyler Gregory Okonma"], ["musician", "rapper"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_rapper": 1.0,
+      "is_singer": 0.5, "has_won_grammy": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "uses_stage_name": 1.0,
+      "is_business_person": 0.4, "peak_era_2010s": 0.7, "peak_era_2020s": 0.8,
+      "is_internet_personality": 0.3}),
+
+    ("charlie_puth", "Charlie Puth", [], ["musician", "singer", "pop_star"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_pop_star": 0.8, "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "is_internet_personality": 0.5, "known_for_social_media": 0.7,
+      "peak_era_2010s": 0.6, "peak_era_2020s": 0.7}),
+
+    ("dolly_parton", "Dolly Parton", [], ["musician", "singer", "actor"], 92,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_actor": 0.4, "has_won_grammy": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "age_over_75": 1.0,
+      "is_business_person": 0.7, "is_author": 0.4, "is_activist": 0.5,
+      "has_acting_and_music_career": 0.6,
+      "peak_era_90s": 0.5, "peak_era_2000s": 0.4, "peak_era_2020s": 0.3}),
+
+    ("ice_spice", "Ice Spice", ["Isis Naija Gaston"], ["musician", "rapper"], 88,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_rapper": 1.0,
+      "is_singer": 0.3, "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0, "age_under_30": 1.0,
+      "uses_stage_name": 1.0, "is_pop_star": 0.6,
+      "known_for_social_media": 0.7, "is_internet_personality": 0.4,
+      "peak_era_2020s": 1.0}),
+
+    ("david_bowie", "David Bowie", ["David Robert Jones"], ["musician", "singer", "actor"], 94,
+     {"is_alive": 0.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_actor": 0.5, "has_won_grammy": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "age_over_50": 1.0, "is_historical_figure": 0.5,
+      "uses_stage_name": 1.0,
+      "has_acting_and_music_career": 0.7,
+      "peak_era_90s": 0.5, "peak_era_2000s": 0.3, "is_pop_star": 0.7}),
+
+    ("prince_musician", "Prince", ["Prince Rogers Nelson"], ["musician", "singer"], 94,
+     {"is_alive": 0.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "has_won_grammy": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "age_over_50": 1.0,
+      "is_historical_figure": 0.3,
+      "known_by_single_name": 1.0, "is_pop_star": 0.9,
+      "peak_era_90s": 0.7, "peak_era_2000s": 0.4}),
+
+    ("whitney_houston", "Whitney Houston", [], ["musician", "singer", "actor"], 93,
+     {"is_alive": 0.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_actor": 0.5, "has_won_grammy": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "age_over_50": 1.0,
+      "is_historical_figure": 0.3, "is_pop_star": 0.9,
+      "has_acting_and_music_career": 0.7,
+      "peak_era_90s": 0.9, "peak_era_2000s": 0.5}),
+
+    ("doja_cat", "Doja Cat", ["Amala Ratna Zandile Dlamini"], ["musician", "rapper", "singer"], 91,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_rapper": 0.8,
+      "is_singer": 0.9, "has_won_grammy": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "uses_stage_name": 1.0,
+      "is_pop_star": 0.8, "is_internet_personality": 0.5,
+      "known_for_social_media": 0.8,
+      "peak_era_2020s": 1.0}),
+
+    ("bob_dylan", "Bob Dylan", ["Robert Allen Zimmerman"], ["musician", "singer", "author"], 93,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "has_won_grammy": 1.0, "has_won_nobel_prize": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "age_over_75": 1.0,
+      "uses_stage_name": 1.0, "is_author": 0.8, "is_activist": 0.6,
+      "peak_era_90s": 0.3}),
+
+    ("megan_thee_stallion", "Megan Thee Stallion", ["Megan Jovon Ruth Pete"], ["musician", "rapper"], 90,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_rapper": 1.0,
+      "is_singer": 0.3, "has_won_grammy": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "uses_stage_name": 1.0, "age_under_30": 1.0,
+      "known_for_social_media": 0.7, "is_internet_personality": 0.4,
+      "peak_era_2020s": 1.0}),
+
+    ("21_savage", "21 Savage", ["Sheyaa Bin Abraham-Joseph"], ["musician", "rapper"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_rapper": 1.0,
+      "is_american": 0.8, "from_europe": 0.3,
+      "from_north_america": 0.8, "lives_in_north_america": 1.0,
+      "uses_stage_name": 1.0,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.8}),
+
+    ("sabrina_carpenter", "Sabrina Carpenter", [], ["musician", "singer", "actor"], 89,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_actor": 0.5, "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0, "age_under_30": 1.0,
+      "is_pop_star": 0.9, "associated_with_disney": 0.7,
+      "has_acting_and_music_career": 0.7,
+      "peak_era_2020s": 1.0}),
+
+    ("chappell_roan", "Chappell Roan", ["Kayleigh Rose Amstutz"], ["musician", "singer", "pop_star"], 88,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "uses_stage_name": 1.0,
+      "is_pop_star": 0.9,
+      "peak_era_2020s": 1.0}),
+
+    ("frank_ocean", "Frank Ocean", ["Christopher Edwin Breaux"], ["musician", "singer"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_rapper": 0.3, "has_won_grammy": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "uses_stage_name": 1.0,
+      "peak_era_2010s": 0.9, "peak_era_2020s": 0.4}),
+
+    ("childish_gambino", "Childish Gambino", ["Donald Glover"], ["musician", "rapper", "actor"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_rapper": 0.8,
+      "is_singer": 0.7, "is_actor": 0.8, "has_won_grammy": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "uses_stage_name": 1.0, "is_director": 0.3,
+      "known_for_television": 0.7, "known_for_comedy": 0.5,
+      "has_acting_and_music_career": 1.0,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.6}),
+
+    ("imagine_dragons", "Imagine Dragons", ["Dan Reynolds"], ["musician", "band"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 0.8,
+      "is_band_member": 1.0, "has_won_grammy": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "is_pop_star": 0.6,
+      "peak_era_2010s": 0.9, "peak_era_2020s": 0.5}),
+
+    ("twenty_one_pilots", "Twenty One Pilots", ["Tyler Joseph", "Josh Dun"], ["musician", "band"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 0.8,
+      "is_rapper": 0.4, "is_band_member": 1.0, "has_won_grammy": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "is_pop_star": 0.6,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.6}),
+
+    ("paul_mccartney", "Paul McCartney", ["Sir James Paul McCartney"], ["musician", "singer"], 94,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_band_member": 1.0, "has_won_grammy": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "age_over_50": 1.0, "age_over_75": 1.0,
+      "is_author": 0.3, "is_activist": 0.3,
+      "peak_era_90s": 0.3}),
+
+    ("juice_wrld", "Juice WRLD", ["Jarad Anthony Higgins"], ["musician", "rapper"], 89,
+     {"is_alive": 0.0, "is_female": 0.0, "is_musician": 1.0, "is_rapper": 1.0,
+      "is_singer": 0.6, "is_american": 1.0, "from_north_america": 1.0,
+      "uses_stage_name": 1.0, "age_under_30": 1.0,
+      "peak_era_2010s": 0.6, "peak_era_2020s": 0.8,
+      "known_for_social_media": 0.5}),
+
+    ("xxxtentacion", "XXXTentacion", ["Jahseh Dwayne Ricardo Onfroy"], ["musician", "rapper"], 88,
+     {"is_alive": 0.0, "is_female": 0.0, "is_musician": 1.0, "is_rapper": 1.0,
+      "is_singer": 0.5, "is_american": 1.0, "from_north_america": 1.0,
+      "uses_stage_name": 1.0, "age_under_30": 1.0,
+      "known_for_social_media": 0.6, "is_internet_personality": 0.3,
+      "peak_era_2010s": 0.6, "peak_era_2020s": 0.3}),
+
+    ("benson_boone", "Benson Boone", [], ["musician", "singer", "pop_star"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_pop_star": 0.8, "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0, "age_under_30": 1.0,
+      "known_for_social_media": 0.6, "is_internet_personality": 0.4,
+      "peak_era_2020s": 1.0}),
+
+    ("tate_mcrae", "Tate McRae", [], ["musician", "singer", "pop_star"], 87,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_pop_star": 0.8, "is_american": 0.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0, "age_under_30": 1.0,
+      "known_for_social_media": 0.6, "is_internet_personality": 0.4,
+      "peak_era_2020s": 1.0}),
+
+    ("karol_g", "Karol G", ["Carolina Giraldo Navarro"], ["musician", "singer"], 90,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_rapper": 0.3, "is_american": 0.0,
+      "lives_in_north_america": 0.5,
+      "uses_stage_name": 1.0, "is_pop_star": 0.8,
+      "known_for_social_media": 0.6,
+      "peak_era_2020s": 1.0}),
+
+    ("jack_harlow", "Jack Harlow", [], ["musician", "rapper"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_rapper": 1.0,
+      "is_singer": 0.3, "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0, "age_under_30": 1.0,
+      "is_pop_star": 0.5, "peak_era_2020s": 1.0}),
+
+    ("demi_lovato", "Demi Lovato", ["Demetria Devonne Lovato"], ["musician", "singer", "actor"], 90,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_actor": 0.5, "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0, "is_pop_star": 0.9,
+      "associated_with_disney": 1.0, "has_acting_and_music_career": 0.8,
+      "is_activist": 0.5, "peak_era_2010s": 0.8, "peak_era_2020s": 0.5}),
+
+    ("john_mayer", "John Mayer", [], ["musician", "singer"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "has_won_grammy": 1.0, "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0, "age_over_50": 1.0,
+      "peak_era_2000s": 0.9, "peak_era_2010s": 0.5,
+      "known_for_social_media": 0.4}),
+
+    ("selena_gomez", "Selena Gomez", [], ["musician", "singer", "actor"], 93,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_actor": 0.8, "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0, "is_pop_star": 0.9,
+      "associated_with_disney": 1.0, "has_acting_and_music_career": 1.0,
+      "known_for_television": 0.7, "is_business_person": 0.6,
+      "known_for_social_media": 0.9, "is_activist": 0.4,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.7}),
+
+    ("shawn_mendes", "Shawn Mendes", [], ["musician", "singer", "pop_star"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_pop_star": 0.9, "is_american": 0.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.6,
+      "known_for_social_media": 0.6}),
+
+    ("freddie_mercury", "Freddie Mercury", ["Farrokh Bulsara"], ["musician", "singer"], 95,
+     {"is_alive": 0.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_band_member": 1.0, "is_american": 0.0, "from_europe": 1.0,
+      "age_over_50": 1.0, "is_historical_figure": 0.6,
+      "uses_stage_name": 1.0,
+      "peak_era_90s": 0.5, "is_pop_star": 0.7}),
+
+    ("future_rapper", "Future", ["Nayvadius DeMun Cash"], ["musician", "rapper"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_rapper": 1.0,
+      "is_singer": 0.4, "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0, "uses_stage_name": 1.0,
+      "known_by_single_name": 1.0, "is_pop_star": 0.5,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.7}),
+
+    ("metro_boomin", "Metro Boomin", ["Leland Tyler Wayne"], ["musician"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_rapper": 0.3,
+      "is_american": 1.0, "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "uses_stage_name": 1.0,
+      "peak_era_2010s": 0.6, "peak_era_2020s": 0.9}),
+
+    ("peso_pluma", "Peso Pluma", ["Hassan Emilio Kabande Laija"], ["musician", "singer"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_american": 0.0, "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "uses_stage_name": 1.0, "age_under_30": 1.0,
+      "peak_era_2020s": 1.0, "known_for_social_media": 0.5}),
+
+    ("joji", "Joji", ["George Kusunoki Miller"], ["musician", "singer"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_american": 0.0,
+      "lives_in_north_america": 1.0,
+      "uses_stage_name": 1.0, "known_by_single_name": 1.0,
+      "is_internet_personality": 0.7, "known_for_social_media": 0.5,
+      "peak_era_2010s": 0.5, "peak_era_2020s": 0.8}),
+
+    ("clairo", "Clairo", ["Claire Elizabeth Cottrill"], ["musician", "singer"], 86,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "uses_stage_name": 1.0, "known_by_single_name": 1.0,
+      "is_internet_personality": 0.5, "known_for_social_media": 0.5,
+      "peak_era_2020s": 0.9}),
+
+    ("hozier", "Hozier", ["Andrew John Hozier-Byrne"], ["musician", "singer"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_american": 0.0, "from_europe": 1.0,
+      "known_by_single_name": 1.0,
+      "peak_era_2010s": 0.6, "peak_era_2020s": 0.8}),
+
+    ("playboi_carti", "Playboi Carti", ["Jordan Terrell Carter"], ["musician", "rapper"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_rapper": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "uses_stage_name": 1.0,
+      "known_for_social_media": 0.5, "is_internet_personality": 0.3,
+      "peak_era_2020s": 0.9}),
+
+    ("gracie_abrams", "Gracie Abrams", [], ["musician", "singer", "pop_star"], 86,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_pop_star": 0.8, "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0, "age_under_30": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("pinkpantheress", "PinkPantheress", ["Victoria Beverly Walker"], ["musician", "singer"], 86,
+     {"is_alive": 1.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "is_american": 0.0, "from_europe": 1.0,
+      "age_under_30": 1.0, "uses_stage_name": 1.0, "known_by_single_name": 1.0,
+      "is_internet_personality": 0.5, "known_for_social_media": 0.6,
+      "peak_era_2020s": 1.0}),
+
+    ("mac_miller", "Mac Miller", ["Malcolm James McCormick"], ["musician", "rapper"], 89,
+     {"is_alive": 0.0, "is_female": 0.0, "is_musician": 1.0, "is_rapper": 1.0,
+      "is_singer": 0.5, "is_american": 1.0, "from_north_america": 1.0,
+      "uses_stage_name": 1.0, "age_under_30": 1.0,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.3}),
+
+    ("central_cee", "Central Cee", ["Oakley Neil H T Caesar-Su"], ["musician", "rapper"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_musician": 1.0, "is_rapper": 1.0,
+      "is_american": 0.0, "from_europe": 1.0,
+      "age_under_30": 1.0, "uses_stage_name": 1.0,
+      "known_for_social_media": 0.6,
+      "peak_era_2020s": 1.0}),
+
+    ("amy_winehouse", "Amy Winehouse", [], ["musician", "singer"], 91,
+     {"is_alive": 0.0, "is_female": 1.0, "is_musician": 1.0, "is_singer": 1.0,
+      "has_won_grammy": 1.0, "is_american": 0.0, "from_europe": 1.0,
+      "is_historical_figure": 0.3,
+      "peak_era_2000s": 0.9}),
+
+    ("tupac_shakur", "Tupac Shakur", ["2Pac", "Makaveli"], ["musician", "rapper", "actor"], 93,
+     {"is_alive": 0.0, "is_female": 0.0, "is_musician": 1.0, "is_rapper": 1.0,
+      "is_singer": 0.3, "is_actor": 0.4, "is_american": 1.0,
+      "from_north_america": 1.0,
+      "is_historical_figure": 0.5, "uses_stage_name": 1.0,
+      "is_activist": 0.5, "has_acting_and_music_career": 0.5,
+      "peak_era_90s": 1.0}),
+
+    ("notorious_big", "The Notorious B.I.G.", ["Biggie Smalls", "Christopher Wallace"], ["musician", "rapper"], 92,
+     {"is_alive": 0.0, "is_female": 0.0, "is_musician": 1.0, "is_rapper": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "is_historical_figure": 0.4, "uses_stage_name": 1.0,
+      "peak_era_90s": 1.0}),
+]
+
+ACTORS = [
+    ("tom_cruise", "Tom Cruise", ["Thomas Cruise Mapother IV"], ["actor"], 95,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "known_for_action_films": 1.0,
+      "peak_era_90s": 0.8, "peak_era_2000s": 0.7, "peak_era_2010s": 0.6, "peak_era_2020s": 0.7}),
+
+    ("johnny_depp", "Johnny Depp", ["John Christopher Depp II"], ["actor"], 94,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 0.5,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "associated_with_disney": 1.0, "known_for_action_films": 0.5,
+      "peak_era_2000s": 0.9, "peak_era_2010s": 0.5}),
+
+    ("matt_damon", "Matt Damon", [], ["actor"], 92,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "known_for_action_films": 0.7, "is_author": 0.3,
+      "peak_era_2000s": 0.8, "peak_era_2010s": 0.6}),
+
+    ("adam_sandler", "Adam Sandler", [], ["actor", "comedian"], 92,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "known_for_comedy": 1.0, "is_comedian": 0.8, "is_standup_comedian": 0.5,
+      "does_voice_acting": 0.5,
+      "peak_era_90s": 0.8, "peak_era_2000s": 0.8, "peak_era_2010s": 0.5, "peak_era_2020s": 0.6}),
+
+    ("al_pacino", "Al Pacino", ["Alfredo James Pacino"], ["actor"], 93,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "age_over_75": 1.0, "known_for_movies": 1.0,
+      "has_won_oscar": 1.0, "known_for_drama_only": 0.8,
+      "known_for_action_films": 0.5,
+      "peak_era_90s": 0.7}),
+
+    ("harrison_ford", "Harrison Ford", [], ["actor"], 93,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "age_over_75": 1.0, "known_for_movies": 1.0,
+      "known_for_action_films": 1.0, "associated_with_disney": 0.5,
+      "peak_era_90s": 0.6, "peak_era_2000s": 0.4, "peak_era_2020s": 0.3}),
+
+    ("jason_momoa", "Jason Momoa", [], ["actor"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "known_for_movies": 1.0, "known_for_action_films": 1.0,
+      "known_for_superhero_role": 1.0, "known_for_television": 0.5,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.8}),
+
+    ("chris_pratt", "Chris Pratt", [], ["actor"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "known_for_movies": 1.0, "known_for_television": 0.6,
+      "known_for_action_films": 0.7, "known_for_comedy": 0.5,
+      "associated_with_marvel": 1.0, "associated_with_disney": 0.5,
+      "does_voice_acting": 0.7,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.7}),
+
+    ("ryan_gosling", "Ryan Gosling", [], ["actor"], 92,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "known_for_movies": 1.0, "known_for_romantic_films": 0.8,
+      "known_for_action_films": 0.5,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.8}),
+
+    ("jennifer_aniston", "Jennifer Aniston", [], ["actor"], 93,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 0.7, "known_for_television": 1.0,
+      "known_for_comedy": 0.8, "known_for_romantic_films": 0.7,
+      "is_business_person": 0.4,
+      "peak_era_90s": 0.9, "peak_era_2000s": 0.8, "peak_era_2010s": 0.5}),
+
+    ("sandra_bullock", "Sandra Bullock", [], ["actor"], 92,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0, "has_won_oscar": 1.0,
+      "known_for_romantic_films": 0.7, "known_for_comedy": 0.5,
+      "known_for_action_films": 0.4,
+      "peak_era_90s": 0.7, "peak_era_2000s": 0.7, "peak_era_2010s": 0.6}),
+
+    ("oscar_isaac", "Oscar Isaac", ["Oscar Isaac Hernandez Estrada"], ["actor"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "known_for_movies": 1.0, "associated_with_marvel": 0.5,
+      "associated_with_disney": 0.5, "known_for_drama_only": 0.5,
+      "known_for_action_films": 0.5,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.7}),
+
+    ("jenna_ortega", "Jenna Ortega", [], ["actor"], 89,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "known_for_movies": 0.6, "known_for_television": 1.0,
+      "associated_with_disney": 0.3, "known_for_social_media": 0.5,
+      "peak_era_2020s": 1.0}),
+
+    ("paul_rudd", "Paul Rudd", [], ["actor", "comedian"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "known_for_comedy": 0.8, "associated_with_marvel": 1.0,
+      "known_for_superhero_role": 0.8,
+      "peak_era_2000s": 0.6, "peak_era_2010s": 0.7, "peak_era_2020s": 0.5}),
+
+    ("idris_elba", "Idris Elba", [], ["actor"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "lives_in_north_america": 0.5,
+      "age_over_50": 1.0, "known_for_movies": 0.8, "known_for_television": 0.8,
+      "known_for_action_films": 0.6, "known_for_drama_only": 0.5,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.6}),
+
+    ("tom_holland", "Tom Holland", [], ["actor"], 92,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "lives_in_north_america": 0.5,
+      "age_under_30": 1.0, "known_for_movies": 1.0,
+      "known_for_superhero_role": 1.0, "associated_with_marvel": 1.0,
+      "associated_with_disney": 0.5, "known_for_action_films": 0.6,
+      "peak_era_2010s": 0.6, "peak_era_2020s": 0.9}),
+
+    ("emma_watson", "Emma Watson", [], ["actor", "activist"], 91,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "lives_in_north_america": 0.5,
+      "known_for_movies": 1.0, "is_activist": 0.8,
+      "peak_era_2000s": 0.7, "peak_era_2010s": 0.8}),
+
+    ("henry_cavill", "Henry Cavill", [], ["actor"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "lives_in_north_america": 0.5,
+      "known_for_movies": 0.8, "known_for_television": 0.8,
+      "known_for_superhero_role": 1.0, "known_for_action_films": 0.8,
+      "peak_era_2010s": 0.6, "peak_era_2020s": 0.9}),
+
+    ("anya_taylor_joy", "Anya Taylor-Joy", [], ["actor"], 90,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_europe": 0.5, "lives_in_north_america": 0.5,
+      "age_under_30": 1.0, "known_for_movies": 0.8, "known_for_television": 0.8,
+      "known_for_drama_only": 0.6, "known_for_action_films": 0.4,
+      "peak_era_2020s": 1.0}),
+
+    ("millie_bobby_brown", "Millie Bobby Brown", [], ["actor"], 90,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "known_for_television": 1.0,
+      "known_for_movies": 0.5, "is_business_person": 0.4,
+      "known_for_social_media": 0.6,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.8}),
+
+    ("daniel_craig", "Daniel Craig", [], ["actor"], 92,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "lives_in_north_america": 0.5,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "known_for_action_films": 1.0,
+      "peak_era_2000s": 0.7, "peak_era_2010s": 0.8, "peak_era_2020s": 0.5}),
+
+    ("cillian_murphy", "Cillian Murphy", [], ["actor"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "known_for_movies": 0.8, "known_for_television": 0.8,
+      "has_won_oscar": 1.0, "known_for_drama_only": 0.7,
+      "peak_era_2010s": 0.6, "peak_era_2020s": 0.9}),
+
+    ("austin_butler", "Austin Butler", [], ["actor"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "known_for_movies": 0.8, "known_for_television": 0.5,
+      "known_for_drama_only": 0.6, "known_for_action_films": 0.4,
+      "peak_era_2020s": 1.0}),
+
+    ("glen_powell", "Glen Powell", [], ["actor"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "known_for_movies": 0.8, "known_for_action_films": 0.6,
+      "known_for_romantic_films": 0.6, "known_for_comedy": 0.5,
+      "peak_era_2020s": 1.0}),
+
+    ("rachel_mcadams", "Rachel McAdams", [], ["actor"], 90,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "known_for_romantic_films": 1.0, "known_for_comedy": 0.5,
+      "peak_era_2000s": 0.8, "peak_era_2010s": 0.6}),
+
+    ("joaquin_phoenix", "Joaquin Phoenix", [], ["actor"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "has_won_oscar": 1.0, "known_for_drama_only": 0.8,
+      "is_activist": 0.6,
+      "peak_era_2000s": 0.6, "peak_era_2010s": 0.7, "peak_era_2020s": 0.8}),
+
+    ("kate_winslet", "Kate Winslet", [], ["actor"], 92,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "has_won_oscar": 1.0, "known_for_romantic_films": 0.7,
+      "known_for_drama_only": 0.7,
+      "peak_era_90s": 0.5, "peak_era_2000s": 0.7, "peak_era_2010s": 0.7, "peak_era_2020s": 0.5}),
+
+    ("chris_rock", "Chris Rock", [], ["actor", "comedian"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 0.7,
+      "known_for_comedy": 1.0, "is_comedian": 1.0, "is_standup_comedian": 1.0,
+      "is_host": 0.5, "does_voice_acting": 0.5,
+      "peak_era_90s": 0.6, "peak_era_2000s": 0.8, "peak_era_2020s": 0.4}),
+
+    ("kevin_hart", "Kevin Hart", [], ["actor", "comedian"], 92,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 0.8,
+      "known_for_comedy": 1.0, "is_comedian": 1.0, "is_standup_comedian": 1.0,
+      "is_business_person": 0.5,
+      "peak_era_2010s": 0.9, "peak_era_2020s": 0.7}),
+
+    ("jack_black", "Jack Black", ["Thomas Jacob Black"], ["actor", "comedian", "musician"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_musician": 0.5,
+      "is_american": 1.0, "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "known_for_comedy": 1.0, "is_comedian": 0.7,
+      "does_voice_acting": 0.8, "is_band_member": 0.5,
+      "has_acting_and_music_career": 0.6,
+      "is_internet_personality": 0.4, "known_for_social_media": 0.5,
+      "peak_era_2000s": 0.8, "peak_era_2010s": 0.5, "peak_era_2020s": 0.5}),
+
+    ("seth_rogen", "Seth Rogen", [], ["actor", "comedian"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "known_for_comedy": 1.0, "is_comedian": 0.6, "is_director": 0.4,
+      "does_voice_acting": 0.6, "is_business_person": 0.4,
+      "peak_era_2000s": 0.7, "peak_era_2010s": 0.8}),
+
+    ("lupita_nyongo", "Lupita Nyong'o", [], ["actor"], 89,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 0.0,
+      "lives_in_north_america": 1.0,
+      "known_for_movies": 1.0, "has_won_oscar": 1.0,
+      "associated_with_marvel": 0.5, "associated_with_disney": 0.5,
+      "is_activist": 0.4, "is_author": 0.3,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.5}),
+
+    ("michael_b_jordan", "Michael B. Jordan", [], ["actor"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "known_for_movies": 1.0, "known_for_action_films": 0.7,
+      "associated_with_marvel": 0.5, "known_for_drama_only": 0.5,
+      "is_director": 0.3,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.7}),
+
+    ("mark_ruffalo", "Mark Ruffalo", [], ["actor", "activist"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "known_for_superhero_role": 0.8, "associated_with_marvel": 1.0,
+      "is_activist": 0.6,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.5}),
+
+    ("halle_berry", "Halle Berry", [], ["actor"], 91,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "has_won_oscar": 1.0, "known_for_action_films": 0.5,
+      "known_for_superhero_role": 0.5,
+      "peak_era_90s": 0.5, "peak_era_2000s": 0.8}),
+
+    ("ana_de_armas", "Ana de Armas", [], ["actor"], 89,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 0.0,
+      "lives_in_north_america": 1.0,
+      "known_for_movies": 1.0, "known_for_action_films": 0.6,
+      "known_for_romantic_films": 0.4,
+      "peak_era_2020s": 1.0}),
+
+    ("jeremy_renner", "Jeremy Renner", [], ["actor"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "known_for_action_films": 0.8, "known_for_superhero_role": 0.8,
+      "associated_with_marvel": 1.0,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.4}),
+
+    ("simu_liu", "Simu Liu", [], ["actor"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "known_for_movies": 0.7, "known_for_television": 0.5,
+      "known_for_superhero_role": 0.8, "associated_with_marvel": 1.0,
+      "associated_with_disney": 0.5,
+      "peak_era_2020s": 1.0}),
+
+    ("aubrey_plaza", "Aubrey Plaza", [], ["actor", "comedian"], 89,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "known_for_movies": 0.6, "known_for_television": 0.9,
+      "known_for_comedy": 0.8, "is_comedian": 0.5,
+      "associated_with_marvel": 0.3,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.8}),
+
+    ("jason_statham", "Jason Statham", [], ["actor"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "known_for_action_films": 1.0,
+      "peak_era_2000s": 0.7, "peak_era_2010s": 0.8, "peak_era_2020s": 0.6}),
+
+    ("john_cena", "John Cena", [], ["athlete", "wrestler", "actor"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 0.8, "is_athlete": 0.8,
+      "is_wrestler": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 0.6,
+      "known_for_action_films": 0.5, "known_for_comedy": 0.5,
+      "does_voice_acting": 0.4, "plays_solo_sport": 1.0,
+      "has_won_major_championship": 1.0,
+      "is_internet_personality": 0.4, "known_for_social_media": 0.5,
+      "peak_era_2000s": 0.7, "peak_era_2010s": 0.7, "peak_era_2020s": 0.6}),
+
+    ("dakota_johnson", "Dakota Johnson", [], ["actor"], 88,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "known_for_movies": 1.0, "known_for_romantic_films": 0.9,
+      "known_for_drama_only": 0.5,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.5}),
+
+    ("jamie_foxx", "Jamie Foxx", ["Eric Marlon Bishop"], ["actor", "comedian", "musician"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_musician": 0.4,
+      "is_american": 1.0, "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "has_won_oscar": 1.0, "known_for_comedy": 0.6,
+      "is_comedian": 0.5, "is_standup_comedian": 0.3,
+      "uses_stage_name": 1.0, "has_acting_and_music_career": 0.5,
+      "peak_era_2000s": 0.8, "peak_era_2010s": 0.7}),
+
+    ("nicole_kidman", "Nicole Kidman", [], ["actor"], 92,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 0.0,
+      "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0, "known_for_television": 0.5,
+      "has_won_oscar": 1.0, "known_for_drama_only": 0.7,
+      "peak_era_90s": 0.6, "peak_era_2000s": 0.8, "peak_era_2010s": 0.6, "peak_era_2020s": 0.5}),
+
+    ("reese_witherspoon", "Reese Witherspoon", ["Laura Jeanne Reese Witherspoon"], ["actor", "business_person"], 91,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0, "known_for_television": 0.6,
+      "has_won_oscar": 1.0, "known_for_romantic_films": 0.6,
+      "known_for_comedy": 0.5, "is_business_person": 0.8,
+      "peak_era_2000s": 0.8, "peak_era_2010s": 0.7, "peak_era_2020s": 0.5}),
+
+    ("will_ferrell", "Will Ferrell", ["John William Ferrell"], ["actor", "comedian"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "known_for_comedy": 1.0, "is_comedian": 0.8,
+      "does_voice_acting": 0.5,
+      "peak_era_2000s": 0.9, "peak_era_2010s": 0.6}),
+
+    ("eddie_murphy", "Eddie Murphy", [], ["actor", "comedian"], 92,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "known_for_comedy": 1.0, "is_comedian": 1.0, "is_standup_comedian": 1.0,
+      "does_voice_acting": 0.8,
+      "peak_era_90s": 0.8, "peak_era_2000s": 0.6, "peak_era_2020s": 0.3}),
+
+    ("barry_keoghan", "Barry Keoghan", [], ["actor"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "known_for_movies": 1.0, "associated_with_marvel": 0.3,
+      "known_for_drama_only": 0.7,
+      "peak_era_2020s": 1.0}),
+
+    ("jacob_elordi", "Jacob Elordi", [], ["actor"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 0.0,
+      "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "known_for_movies": 0.7, "known_for_television": 0.8,
+      "known_for_romantic_films": 0.5, "known_for_drama_only": 0.5,
+      "peak_era_2020s": 1.0}),
+
+    ("dave_chappelle", "Dave Chappelle", [], ["comedian", "actor"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 0.5, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 0.3, "known_for_television": 0.8,
+      "known_for_comedy": 1.0, "is_comedian": 1.0, "is_standup_comedian": 1.0,
+      "has_won_grammy": 0.5,
+      "peak_era_2000s": 0.8, "peak_era_2010s": 0.5, "peak_era_2020s": 0.7}),
+
+    ("steve_carell", "Steve Carell", ["Steven John Carell"], ["actor", "comedian"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 0.7, "known_for_television": 0.9,
+      "known_for_comedy": 1.0, "is_comedian": 0.6,
+      "does_voice_acting": 0.6,
+      "peak_era_2000s": 0.8, "peak_era_2010s": 0.7}),
+
+    ("ke_huy_quan", "Ke Huy Quan", ["Jonathan Ke Quan"], ["actor"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "has_won_oscar": 1.0, "known_for_action_films": 0.5,
+      "peak_era_2020s": 0.9}),
+
+    ("salma_hayek", "Salma Hayek", ["Salma Hayek Pinault"], ["actor"], 90,
+     {"is_alive": 1.0, "is_female": 1.0, "is_actor": 1.0, "is_american": 0.0,
+      "from_north_america": 1.0, "lives_in_north_america": 0.5,
+      "age_over_50": 1.0, "known_for_movies": 1.0,
+      "associated_with_marvel": 0.3,
+      "peak_era_2000s": 0.7, "peak_era_2010s": 0.5, "peak_era_2020s": 0.4}),
+
+    ("bob_odenkirk", "Bob Odenkirk", [], ["actor", "comedian"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_actor": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_television": 1.0,
+      "known_for_movies": 0.4, "known_for_comedy": 0.6,
+      "known_for_drama_only": 0.5, "is_comedian": 0.4, "is_author": 0.3,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.7}),
+]
+
+ATHLETES = [
+    ("aaron_rodgers", "Aaron Rodgers", [], ["athlete", "american_football"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "plays_team_sport": 1.0,
+      "is_american_football_player": 1.0, "has_won_major_championship": 1.0,
+      "peak_era_2010s": 0.9, "peak_era_2020s": 0.5}),
+
+    ("lamar_jackson", "Lamar Jackson", [], ["athlete", "american_football"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0,
+      "is_american_football_player": 1.0,
+      "peak_era_2020s": 0.9}),
+
+    ("josh_allen", "Josh Allen", [], ["athlete", "american_football"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0,
+      "is_american_football_player": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("jalen_hurts", "Jalen Hurts", [], ["athlete", "american_football"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0,
+      "is_american_football_player": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("joe_burrow", "Joe Burrow", [], ["athlete", "american_football"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0,
+      "is_american_football_player": 1.0,
+      "known_for_social_media": 0.4,
+      "peak_era_2020s": 1.0}),
+
+    ("travis_kelce", "Travis Kelce", [], ["athlete", "american_football"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "plays_team_sport": 1.0, "is_american_football_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "known_for_reality_tv": 0.3, "known_for_social_media": 0.6,
+      "is_internet_personality": 0.3,
+      "peak_era_2020s": 1.0}),
+
+    ("peyton_manning", "Peyton Manning", [], ["athlete", "american_football"], 92,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "plays_team_sport": 1.0,
+      "is_american_football_player": 1.0, "has_won_major_championship": 1.0,
+      "is_retired": 1.0, "is_host": 0.3, "is_business_person": 0.4,
+      "peak_era_2000s": 0.9, "peak_era_2010s": 0.7}),
+
+    ("giannis_antetokounmpo", "Giannis Antetokounmpo", ["Greek Freak"], ["athlete", "basketball"], 92,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "lives_in_north_america": 1.0,
+      "plays_team_sport": 1.0, "is_basketball_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("kevin_durant", "Kevin Durant", [], ["athlete", "basketball"], 92,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "plays_team_sport": 1.0, "is_basketball_player": 1.0,
+      "has_won_major_championship": 1.0, "is_business_person": 0.4,
+      "known_for_social_media": 0.6,
+      "peak_era_2010s": 0.9, "peak_era_2020s": 0.7}),
+
+    ("jimmy_butler", "Jimmy Butler", [], ["athlete", "basketball"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "plays_team_sport": 1.0, "is_basketball_player": 1.0,
+      "known_for_social_media": 0.5,
+      "peak_era_2020s": 0.9}),
+
+    ("luka_doncic", "Luka Doncic", [], ["athlete", "basketball"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "is_from_eastern_europe": 0.3,
+      "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0, "is_basketball_player": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("anthony_edwards_bball", "Anthony Edwards", [], ["athlete", "basketball"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0, "is_basketball_player": 1.0,
+      "known_for_social_media": 0.4,
+      "peak_era_2020s": 1.0}),
+
+    ("nikola_jokic", "Nikola Jokic", [], ["athlete", "basketball"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "is_from_eastern_europe": 1.0,
+      "lives_in_north_america": 1.0,
+      "plays_team_sport": 1.0, "is_basketball_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("ja_morant", "Ja Morant", ["Temetrius Jamel Morant"], ["athlete", "basketball"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0, "is_basketball_player": 1.0,
+      "known_for_social_media": 0.5,
+      "peak_era_2020s": 1.0}),
+
+    ("victor_wembanyama", "Victor Wembanyama", ["Wemby"], ["athlete", "basketball"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0, "is_basketball_player": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("erling_haaland", "Erling Haaland", [], ["athlete", "soccer"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0, "is_soccer_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("vinicius_jr", "Vinicius Jr.", ["Vinicius Jose Paixao de Oliveira Junior"], ["athlete", "soccer"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0, "is_soccer_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("jude_bellingham", "Jude Bellingham", [], ["athlete", "soccer"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0, "is_soccer_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("mohamed_salah", "Mohamed Salah", [], ["athlete", "soccer"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "plays_team_sport": 1.0, "is_soccer_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2010s": 0.5, "peak_era_2020s": 0.9}),
+
+    ("robert_lewandowski", "Robert Lewandowski", [], ["athlete", "soccer"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "is_from_eastern_europe": 1.0,
+      "plays_team_sport": 1.0, "is_soccer_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.8}),
+
+    ("kevin_de_bruyne", "Kevin De Bruyne", [], ["athlete", "soccer"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "plays_team_sport": 1.0, "is_soccer_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2010s": 0.6, "peak_era_2020s": 0.9}),
+
+    ("carlos_alcaraz", "Carlos Alcaraz", [], ["athlete", "tennis"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "age_under_30": 1.0, "plays_solo_sport": 1.0, "is_tennis_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("iga_swiatek", "Iga Swiatek", [], ["athlete", "tennis"], 88,
+     {"is_alive": 1.0, "is_female": 1.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "is_from_eastern_europe": 1.0,
+      "age_under_30": 1.0, "plays_solo_sport": 1.0, "is_tennis_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("coco_gauff", "Coco Gauff", ["Cori Dionne Gauff"], ["athlete", "tennis"], 87,
+     {"is_alive": 1.0, "is_female": 1.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_solo_sport": 1.0, "is_tennis_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "is_activist": 0.3,
+      "peak_era_2020s": 1.0}),
+
+    ("jannik_sinner", "Jannik Sinner", [], ["athlete", "tennis"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "age_under_30": 1.0, "plays_solo_sport": 1.0, "is_tennis_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("aryna_sabalenka", "Aryna Sabalenka", [], ["athlete", "tennis"], 87,
+     {"is_alive": 1.0, "is_female": 1.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "is_from_eastern_europe": 1.0,
+      "age_under_30": 1.0, "plays_solo_sport": 1.0, "is_tennis_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("charles_leclerc", "Charles Leclerc", [], ["athlete", "racing"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "age_under_30": 1.0, "plays_solo_sport": 1.0, "is_racing_driver": 1.0,
+      "known_for_social_media": 0.5,
+      "peak_era_2020s": 1.0}),
+
+    ("lando_norris", "Lando Norris", [], ["athlete", "racing"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "age_under_30": 1.0, "plays_solo_sport": 1.0, "is_racing_driver": 1.0,
+      "known_for_social_media": 0.6, "is_internet_personality": 0.3,
+      "known_for_streaming": 0.3,
+      "peak_era_2020s": 1.0}),
+
+    ("katie_ledecky", "Katie Ledecky", [], ["athlete", "swimming"], 89,
+     {"is_alive": 1.0, "is_female": 1.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_solo_sport": 1.0, "is_swimmer": 1.0,
+      "has_won_major_championship": 1.0, "has_most_titles_in_sport": 0.8,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.8}),
+
+    ("caeleb_dressel", "Caeleb Dressel", [], ["athlete", "swimming"], 86,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_solo_sport": 1.0, "is_swimmer": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2020s": 0.9}),
+
+    ("rory_mcilroy", "Rory McIlroy", [], ["athlete", "golf"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "lives_in_north_america": 1.0,
+      "plays_solo_sport": 1.0, "is_golfer": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2010s": 0.9, "peak_era_2020s": 0.7}),
+
+    ("scottie_scheffler", "Scottie Scheffler", [], ["athlete", "golf"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_solo_sport": 1.0, "is_golfer": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("nelly_korda", "Nelly Korda", [], ["athlete", "golf"], 86,
+     {"is_alive": 1.0, "is_female": 1.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_solo_sport": 1.0, "is_golfer": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("becky_lynch", "Becky Lynch", ["Rebecca Quin"], ["athlete", "wrestler"], 88,
+     {"is_alive": 1.0, "is_female": 1.0, "is_athlete": 0.8, "is_american": 0.0,
+      "from_europe": 1.0, "lives_in_north_america": 1.0,
+      "is_wrestler": 1.0, "plays_solo_sport": 1.0,
+      "has_won_major_championship": 1.0, "uses_stage_name": 1.0,
+      "known_for_social_media": 0.5,
+      "peak_era_2010s": 0.6, "peak_era_2020s": 0.9}),
+
+    ("roman_reigns", "Roman Reigns", ["Leati Joseph Anoa'i"], ["athlete", "wrestler"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 0.8, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "is_wrestler": 1.0, "plays_solo_sport": 1.0,
+      "has_won_major_championship": 1.0, "uses_stage_name": 1.0,
+      "known_for_social_media": 0.4,
+      "peak_era_2010s": 0.6, "peak_era_2020s": 0.9}),
+
+    ("caitlin_clark", "Caitlin Clark", [], ["athlete", "basketball"], 88,
+     {"is_alive": 1.0, "is_female": 1.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0, "is_basketball_player": 1.0,
+      "known_for_social_media": 0.6,
+      "peak_era_2020s": 1.0}),
+
+    ("shohei_ohtani", "Shohei Ohtani", [], ["athlete", "baseball"], 91,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "lives_in_north_america": 1.0,
+      "plays_team_sport": 1.0, "has_won_major_championship": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("noah_lyles", "Noah Lyles", [], ["athlete", "track"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_solo_sport": 1.0,
+      "has_won_major_championship": 1.0,
+      "known_for_social_media": 0.5, "is_internet_personality": 0.3,
+      "peak_era_2020s": 1.0}),
+
+    ("sha_carri_richardson", "Sha'Carri Richardson", [], ["athlete", "track"], 87,
+     {"is_alive": 1.0, "is_female": 1.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_solo_sport": 1.0,
+      "has_won_major_championship": 1.0,
+      "known_for_social_media": 0.6,
+      "peak_era_2020s": 1.0}),
+
+    ("marcus_rashford", "Marcus Rashford", [], ["athlete", "soccer"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0, "is_soccer_player": 1.0,
+      "is_activist": 0.6, "known_for_social_media": 0.5,
+      "peak_era_2020s": 0.9}),
+
+    ("bukayo_saka", "Bukayo Saka", [], ["athlete", "soccer"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0, "is_soccer_player": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("karim_benzema", "Karim Benzema", [], ["athlete", "soccer"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "plays_team_sport": 1.0, "is_soccer_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.8}),
+
+    ("jason_tatum", "Jayson Tatum", [], ["athlete", "basketball"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0, "is_basketball_player": 1.0,
+      "has_won_major_championship": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("shai_gilgeous_alexander", "Shai Gilgeous-Alexander", [], ["athlete", "basketball"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0, "is_basketball_player": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("connor_mcdavid", "Connor McDavid", [], ["athlete", "hockey"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("alex_ovechkin", "Alex Ovechkin", ["Alexander Ovechkin"], ["athlete", "hockey"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_europe": 1.0, "is_from_eastern_europe": 1.0,
+      "lives_in_north_america": 1.0,
+      "plays_team_sport": 1.0,
+      "has_won_major_championship": 1.0, "has_most_titles_in_sport": 0.6,
+      "peak_era_2000s": 0.6, "peak_era_2010s": 0.8, "peak_era_2020s": 0.7}),
+
+    ("aaron_judge", "Aaron Judge", [], ["athlete", "baseball"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "plays_team_sport": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("diana_taurasi", "Diana Taurasi", [], ["athlete", "basketball"], 88,
+     {"is_alive": 1.0, "is_female": 1.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "plays_team_sport": 1.0, "is_basketball_player": 1.0,
+      "has_won_major_championship": 1.0, "has_most_titles_in_sport": 0.5,
+      "peak_era_2000s": 0.5, "peak_era_2010s": 0.7, "peak_era_2020s": 0.5}),
+
+    ("angel_reese", "Angel Reese", [], ["athlete", "basketball"], 86,
+     {"is_alive": 1.0, "is_female": 1.0, "is_athlete": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "plays_team_sport": 1.0, "is_basketball_player": 1.0,
+      "known_for_social_media": 0.7, "is_internet_personality": 0.3,
+      "peak_era_2020s": 1.0}),
+
+    ("canelo_alvarez", "Canelo Alvarez", ["Santos Saul Alvarez Baragan"], ["athlete", "boxing"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "plays_solo_sport": 1.0, "has_won_major_championship": 1.0,
+      "uses_stage_name": 1.0,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.8}),
+
+    ("israel_adesanya", "Israel Adesanya", ["The Last Stylebender"], ["athlete", "mma"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_athlete": 1.0, "is_american": 0.0,
+      "plays_solo_sport": 1.0, "has_won_major_championship": 1.0,
+      "is_internet_personality": 0.3, "known_for_social_media": 0.5,
+      "peak_era_2020s": 0.9}),
+]
+
+POLITICIANS = [
+    ("george_hw_bush", "George H.W. Bush", ["George Herbert Walker Bush"], ["politician"], 91,
+     {"is_alive": 0.0, "is_female": 0.0, "is_politician": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "age_over_50": 1.0, "age_over_75": 1.0,
+      "is_us_president": 1.0, "is_head_of_state": 1.0,
+      "has_held_elected_office": 1.0, "is_republican": 1.0,
+      "held_office_pre_2000": 1.0, "is_historical_figure": 0.6,
+      "peak_era_90s": 0.9}),
+
+    ("richard_nixon", "Richard Nixon", ["Richard Milhous Nixon"], ["politician"], 91,
+     {"is_alive": 0.0, "is_female": 0.0, "is_politician": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "age_over_50": 1.0, "age_over_75": 1.0,
+      "is_us_president": 1.0, "is_head_of_state": 1.0,
+      "has_held_elected_office": 1.0, "is_republican": 1.0,
+      "held_office_pre_2000": 1.0, "is_historical_figure": 1.0,
+      "is_author": 0.4}),
+
+    ("ronald_reagan", "Ronald Reagan", [], ["politician", "actor"], 92,
+     {"is_alive": 0.0, "is_female": 0.0, "is_politician": 1.0, "is_actor": 0.4,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "age_over_50": 1.0, "age_over_75": 1.0,
+      "is_us_president": 1.0, "is_head_of_state": 1.0,
+      "has_held_elected_office": 1.0, "is_republican": 1.0,
+      "held_office_pre_2000": 1.0, "is_historical_figure": 1.0,
+      "peak_era_90s": 0.3}),
+
+    ("jimmy_carter", "Jimmy Carter", ["James Earl Carter Jr."], ["politician"], 90,
+     {"is_alive": 0.0, "is_female": 0.0, "is_politician": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "age_over_50": 1.0, "age_over_75": 1.0,
+      "is_us_president": 1.0, "is_head_of_state": 1.0,
+      "has_held_elected_office": 1.0, "is_democrat": 1.0,
+      "held_office_pre_2000": 1.0, "is_historical_figure": 0.8,
+      "has_won_nobel_prize": 1.0, "is_author": 0.6, "is_activist": 0.7}),
+
+    ("mike_pence", "Mike Pence", ["Michael Richard Pence"], ["politician"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_politician": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "has_held_elected_office": 1.0,
+      "is_republican": 1.0, "is_author": 0.3,
+      "peak_era_2010s": 0.5, "peak_era_2020s": 0.7}),
+
+    ("nancy_pelosi", "Nancy Pelosi", ["Nancy Patricia Pelosi"], ["politician"], 89,
+     {"is_alive": 1.0, "is_female": 1.0, "is_politician": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "age_over_75": 1.0,
+      "has_held_elected_office": 1.0, "is_democrat": 1.0,
+      "held_office_pre_2000": 1.0,
+      "peak_era_2000s": 0.5, "peak_era_2010s": 0.7, "peak_era_2020s": 0.8}),
+
+    ("pete_buttigieg", "Pete Buttigieg", ["Peter Paul Montgomery Buttigieg"], ["politician"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_politician": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "has_held_elected_office": 1.0,
+      "is_democrat": 1.0, "is_author": 0.3,
+      "peak_era_2020s": 0.9}),
+
+    ("gavin_newsom", "Gavin Newsom", [], ["politician"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_politician": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "has_held_elected_office": 1.0,
+      "is_democrat": 1.0,
+      "peak_era_2020s": 0.9}),
+
+    ("ron_desantis", "Ron DeSantis", ["Ronald Dion DeSantis"], ["politician"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_politician": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "has_held_elected_office": 1.0,
+      "is_republican": 1.0,
+      "peak_era_2020s": 0.9}),
+
+    ("nikki_haley", "Nikki Haley", ["Nimarata Nikki Haley"], ["politician"], 87,
+     {"is_alive": 1.0, "is_female": 1.0, "is_politician": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "has_held_elected_office": 1.0,
+      "is_republican": 1.0,
+      "peak_era_2010s": 0.5, "peak_era_2020s": 0.8}),
+
+    ("jd_vance", "JD Vance", ["James David Vance"], ["politician", "author"], 86,
+     {"is_alive": 1.0, "is_female": 0.0, "is_politician": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "has_held_elected_office": 1.0,
+      "is_republican": 1.0, "is_author": 0.8, "is_business_person": 0.4,
+      "peak_era_2020s": 1.0}),
+
+    ("elizabeth_warren", "Elizabeth Warren", [], ["politician"], 88,
+     {"is_alive": 1.0, "is_female": 1.0, "is_politician": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "age_over_75": 1.0,
+      "has_held_elected_office": 1.0, "is_democrat": 1.0,
+      "is_author": 0.5, "is_activist": 0.4,
+      "peak_era_2010s": 0.6, "peak_era_2020s": 0.7}),
+
+    ("ted_cruz", "Ted Cruz", ["Rafael Edward Cruz"], ["politician"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_politician": 1.0, "is_american": 1.0,
+      "from_north_america": 1.0, "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "has_held_elected_office": 1.0,
+      "is_republican": 1.0,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.6}),
+
+    ("olaf_scholz", "Olaf Scholz", [], ["politician"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_politician": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "age_over_50": 1.0, "is_head_of_state": 1.0,
+      "has_held_elected_office": 1.0, "is_european_leader": 1.0,
+      "peak_era_2020s": 0.9}),
+
+    ("rishi_sunak", "Rishi Sunak", [], ["politician"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_politician": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "is_head_of_state": 1.0, "has_held_elected_office": 1.0,
+      "is_european_leader": 1.0, "is_business_person": 0.3,
+      "peak_era_2020s": 1.0}),
+
+    ("keir_starmer", "Keir Starmer", ["Sir Keir Rodney Starmer"], ["politician"], 86,
+     {"is_alive": 1.0, "is_female": 0.0, "is_politician": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "age_over_50": 1.0, "is_head_of_state": 1.0,
+      "has_held_elected_office": 1.0, "is_european_leader": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("giorgia_meloni", "Giorgia Meloni", [], ["politician"], 86,
+     {"is_alive": 1.0, "is_female": 1.0, "is_politician": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "age_over_50": 1.0, "is_head_of_state": 1.0,
+      "has_held_elected_office": 1.0, "is_european_leader": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("benjamin_netanyahu", "Benjamin Netanyahu", ["Bibi"], ["politician"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_politician": 1.0, "is_american": 0.0,
+      "age_over_50": 1.0, "age_over_75": 1.0,
+      "is_head_of_state": 1.0, "has_held_elected_office": 1.0,
+      "is_asian_leader": 1.0, "held_office_pre_2000": 1.0,
+      "peak_era_2000s": 0.5, "peak_era_2010s": 0.7, "peak_era_2020s": 0.8}),
+
+    ("king_charles", "King Charles III", ["Charles Philip Arthur George"], ["royalty"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_politician": 0.3, "is_american": 0.0,
+      "from_europe": 1.0,
+      "age_over_50": 1.0, "age_over_75": 1.0,
+      "is_royalty": 1.0, "is_head_of_state": 1.0,
+      "is_european_leader": 1.0, "is_activist": 0.5,
+      "peak_era_2020s": 0.8}),
+
+    ("princess_diana", "Princess Diana", ["Diana Frances Spencer"], ["royalty"], 92,
+     {"is_alive": 0.0, "is_female": 1.0, "is_american": 0.0,
+      "from_europe": 1.0,
+      "is_royalty": 1.0, "is_historical_figure": 0.7,
+      "is_activist": 0.8,
+      "peak_era_90s": 0.9}),
+
+    ("greta_thunberg", "Greta Thunberg", [], ["activist"], 88,
+     {"is_alive": 1.0, "is_female": 1.0, "is_politician": 0.3, "is_american": 0.0,
+      "from_europe": 1.0, "is_swedish": 1.0,
+      "age_under_30": 1.0, "is_activist": 1.0,
+      "known_for_social_media": 0.7, "is_internet_personality": 0.4,
+      "is_author": 0.4,
+      "peak_era_2020s": 0.9}),
+
+    ("malala_yousafzai", "Malala Yousafzai", [], ["activist", "author"], 89,
+     {"is_alive": 1.0, "is_female": 1.0, "is_politician": 0.2, "is_american": 0.0,
+      "age_under_30": 1.0, "is_activist": 1.0,
+      "has_won_nobel_prize": 1.0, "is_author": 0.8,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.5}),
+
+    ("dalai_lama", "Dalai Lama", ["Tenzin Gyatso"], ["religious_leader", "activist"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_politician": 0.3, "is_american": 0.0,
+      "age_over_50": 1.0, "age_over_75": 1.0,
+      "is_activist": 1.0, "has_won_nobel_prize": 1.0,
+      "is_author": 0.8, "is_head_of_state": 0.3,
+      "is_asian_leader": 0.3,
+      "is_historical_figure": 0.5}),
+
+    ("elon_musk", "Elon Musk", [], ["business_person", "politician"], 96,
+     {"is_alive": 1.0, "is_female": 0.0, "is_politician": 0.5, "is_american": 0.8,
+      "from_north_america": 0.8, "lives_in_north_america": 1.0,
+      "is_business_person": 1.0, "is_internet_personality": 0.7,
+      "known_for_social_media": 1.0,
+      "is_scientist": 0.3,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 1.0}),
+
+    ("jeff_bezos", "Jeff Bezos", ["Jeffrey Preston Bezos"], ["business_person"], 93,
+     {"is_alive": 1.0, "is_female": 0.0, "is_business_person": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "known_for_social_media": 0.4,
+      "peak_era_2000s": 0.5, "peak_era_2010s": 0.8, "peak_era_2020s": 0.7}),
+
+    ("mark_zuckerberg", "Mark Zuckerberg", [], ["business_person"], 93,
+     {"is_alive": 1.0, "is_female": 0.0, "is_business_person": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "is_internet_personality": 0.5, "known_for_social_media": 0.8,
+      "peak_era_2010s": 0.9, "peak_era_2020s": 0.7}),
+
+    ("bill_gates", "Bill Gates", ["William Henry Gates III"], ["business_person", "author"], 93,
+     {"is_alive": 1.0, "is_female": 0.0, "is_business_person": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "is_author": 0.6, "is_activist": 0.5,
+      "peak_era_90s": 0.7, "peak_era_2000s": 0.7, "peak_era_2010s": 0.6, "peak_era_2020s": 0.5}),
+
+    ("sam_altman", "Sam Altman", ["Samuel Harris Altman"], ["business_person"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_business_person": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "is_internet_personality": 0.4, "known_for_social_media": 0.5,
+      "peak_era_2020s": 1.0}),
+
+    ("oprah_winfrey", "Oprah Winfrey", [], ["business_person", "host", "actor"], 94,
+     {"is_alive": 1.0, "is_female": 1.0, "is_business_person": 1.0,
+      "is_actor": 0.4, "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "is_host": 1.0, "is_author": 0.5,
+      "known_for_television": 0.9, "is_activist": 0.5,
+      "peak_era_90s": 0.8, "peak_era_2000s": 0.9, "peak_era_2010s": 0.7, "peak_era_2020s": 0.4}),
+
+    ("neil_degrasse_tyson", "Neil deGrasse Tyson", [], ["scientist", "author"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_scientist": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "is_author": 0.8, "is_host": 0.6,
+      "known_for_television": 0.5,
+      "is_internet_personality": 0.5, "known_for_social_media": 0.6,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.5}),
+
+    ("jane_goodall", "Jane Goodall", ["Dame Jane Morris Goodall"], ["scientist", "activist"], 89,
+     {"is_alive": 1.0, "is_female": 1.0, "is_scientist": 1.0,
+      "is_american": 0.0, "from_europe": 1.0,
+      "age_over_50": 1.0, "age_over_75": 1.0,
+      "is_activist": 1.0, "is_author": 0.7,
+      "peak_era_2000s": 0.5, "peak_era_2010s": 0.4}),
+
+    ("stephen_hawking", "Stephen Hawking", [], ["scientist", "author"], 92,
+     {"is_alive": 0.0, "is_female": 0.0, "is_scientist": 1.0,
+      "is_american": 0.0, "from_europe": 1.0,
+      "age_over_50": 1.0, "age_over_75": 1.0,
+      "is_author": 1.0, "is_historical_figure": 0.5,
+      "known_for_television": 0.3,
+      "peak_era_2000s": 0.6, "peak_era_2010s": 0.5}),
+
+    ("albert_einstein", "Albert Einstein", [], ["scientist"], 95,
+     {"is_alive": 0.0, "is_female": 0.0, "is_scientist": 1.0,
+      "is_american": 0.5, "from_europe": 1.0,
+      "age_over_50": 1.0, "age_over_75": 1.0,
+      "is_historical_figure": 1.0, "has_won_nobel_prize": 1.0,
+      "is_author": 0.5, "is_activist": 0.3}),
+
+    ("martin_luther_king", "Martin Luther King Jr.", ["MLK"], ["activist", "author"], 94,
+     {"is_alive": 0.0, "is_female": 0.0, "is_politician": 0.3,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "is_historical_figure": 1.0,
+      "is_activist": 1.0, "has_won_nobel_prize": 1.0,
+      "is_author": 0.7}),
+
+    ("gandhi", "Mahatma Gandhi", ["Mohandas Karamchand Gandhi"], ["politician", "activist"], 94,
+     {"is_alive": 0.0, "is_female": 0.0, "is_politician": 0.7,
+      "is_american": 0.0, "is_asian_leader": 0.8,
+      "age_over_50": 1.0, "age_over_75": 1.0,
+      "is_historical_figure": 1.0, "is_activist": 1.0,
+      "is_author": 0.6, "is_head_of_state": 0.3}),
+
+    ("joe_rogan", "Joe Rogan", ["Joseph James Rogan"], ["internet_personality", "comedian", "host"], 93,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "is_comedian": 0.7, "is_standup_comedian": 0.7,
+      "is_host": 1.0, "known_for_streaming": 0.9,
+      "known_for_social_media": 0.8,
+      "subscriber_count_tier": 1.0,
+      "peak_era_2010s": 0.6, "peak_era_2020s": 1.0}),
+
+    ("jordan_peterson", "Jordan Peterson", [], ["author", "internet_personality"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 0.8,
+      "is_american": 0.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "age_over_50": 1.0, "is_author": 1.0, "is_scientist": 0.5,
+      "known_for_social_media": 0.8,
+      "subscriber_count_tier": 0.7,
+      "peak_era_2010s": 0.5, "peak_era_2020s": 0.9}),
+]
+
+INTERNET_CREATORS = [
+    ("khaby_lame", "Khaby Lame", ["Khabane Lame"], ["internet_personality"], 90,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 0.0, "from_europe": 1.0,
+      "age_under_30": 1.0, "known_for_social_media": 1.0,
+      "is_comedian": 0.3, "is_challenge_creator": 0.5,
+      "subscriber_count_tier": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("bella_poarch", "Bella Poarch", [], ["internet_personality", "musician"], 88,
+     {"is_alive": 1.0, "is_female": 1.0, "is_internet_personality": 1.0,
+      "is_musician": 0.5, "is_singer": 0.4,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "known_for_social_media": 1.0,
+      "subscriber_count_tier": 0.8,
+      "peak_era_2020s": 1.0}),
+
+    ("jacksepticeye", "Jacksepticeye", ["Sean William McLoughlin"], ["internet_personality", "gaming"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 0.0, "from_europe": 1.0,
+      "is_gaming_creator": 1.0, "known_for_streaming": 0.7,
+      "known_for_social_media": 0.7,
+      "uses_stage_name": 1.0, "subscriber_count_tier": 0.8,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.6}),
+
+    ("tommyinnit", "TommyInnit", ["Thomas Simons"], ["internet_personality", "gaming"], 86,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 0.0, "from_europe": 1.0,
+      "age_under_30": 1.0, "is_gaming_creator": 1.0,
+      "known_for_streaming": 0.8, "is_live_streamer": 0.7,
+      "known_for_social_media": 0.7,
+      "uses_stage_name": 1.0, "subscriber_count_tier": 0.7,
+      "peak_era_2020s": 1.0}),
+
+    ("xqc", "xQc", ["Felix Lengyel"], ["internet_personality", "gaming"], 89,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 0.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "is_gaming_creator": 1.0,
+      "known_for_streaming": 1.0, "is_live_streamer": 1.0,
+      "known_for_social_media": 0.7,
+      "uses_stage_name": 1.0, "subscriber_count_tier": 0.8,
+      "peak_era_2020s": 1.0}),
+
+    ("liza_koshy", "Liza Koshy", ["Elizabeth Shaila Koshy"], ["internet_personality", "actor"], 88,
+     {"is_alive": 1.0, "is_female": 1.0, "is_internet_personality": 1.0,
+      "is_actor": 0.4, "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "is_comedian": 0.5,
+      "known_for_social_media": 0.9, "is_vlog_creator": 0.8,
+      "subscriber_count_tier": 0.7,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.5}),
+
+    ("ryan_trahan", "Ryan Trahan", [], ["internet_personality"], 86,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "known_for_social_media": 0.8,
+      "is_vlog_creator": 0.8, "is_challenge_creator": 0.7,
+      "subscriber_count_tier": 0.7,
+      "peak_era_2020s": 1.0}),
+
+    ("airrack", "Airrack", ["Eric Decker"], ["internet_personality"], 86,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "known_for_social_media": 0.8,
+      "is_vlog_creator": 0.7, "is_challenge_creator": 0.8,
+      "uses_stage_name": 1.0, "subscriber_count_tier": 0.7,
+      "peak_era_2020s": 1.0}),
+
+    ("bretman_rock", "Bretman Rock", ["Bretman Rock Sacayanan Laforga"], ["internet_personality", "beauty"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "is_beauty_creator": 1.0,
+      "known_for_social_media": 0.9,
+      "known_for_reality_tv": 0.3, "subscriber_count_tier": 0.7,
+      "peak_era_2010s": 0.5, "peak_era_2020s": 0.8}),
+
+    ("tana_mongeau", "Tana Mongeau", [], ["internet_personality"], 87,
+     {"is_alive": 1.0, "is_female": 1.0, "is_internet_personality": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "known_for_social_media": 0.9,
+      "is_vlog_creator": 0.8, "known_for_reality_tv": 0.4,
+      "subscriber_count_tier": 0.6,
+      "peak_era_2010s": 0.6, "peak_era_2020s": 0.7}),
+
+    ("technoblade", "Technoblade", ["Alexander"], ["internet_personality", "gaming"], 87,
+     {"is_alive": 0.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "age_under_30": 1.0, "is_gaming_creator": 1.0,
+      "known_for_streaming": 0.7, "known_for_social_media": 0.6,
+      "uses_stage_name": 1.0, "known_by_single_name": 1.0,
+      "subscriber_count_tier": 0.7,
+      "peak_era_2020s": 0.9}),
+
+    ("andrew_tate", "Andrew Tate", ["Emory Andrew Tate III"], ["internet_personality"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 0.5, "from_north_america": 0.5,
+      "from_europe": 0.5, "is_from_eastern_europe": 0.3,
+      "is_business_person": 0.5, "is_wrestler": 0.3,
+      "known_for_social_media": 1.0, "known_for_streaming": 0.5,
+      "subscriber_count_tier": 0.7,
+      "peak_era_2020s": 1.0}),
+
+    ("alix_earle", "Alix Earle", [], ["internet_personality", "beauty"], 86,
+     {"is_alive": 1.0, "is_female": 1.0, "is_internet_personality": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "is_beauty_creator": 0.7,
+      "known_for_social_media": 1.0, "is_vlog_creator": 0.6,
+      "subscriber_count_tier": 0.5,
+      "peak_era_2020s": 1.0}),
+
+    ("philip_defranco", "Philip DeFranco", [], ["internet_personality", "host"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "is_host": 0.7,
+      "known_for_social_media": 0.8, "is_vlog_creator": 0.5,
+      "subscriber_count_tier": 0.7,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.5}),
+
+    ("sidemen", "Sidemen", ["KSI", "Miniminter"], ["internet_personality", "gaming"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 0.0, "from_europe": 1.0,
+      "is_gaming_creator": 0.6, "is_challenge_creator": 0.8,
+      "known_for_social_media": 0.8,
+      "subscriber_count_tier": 0.9,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.8}),
+
+    ("mrwhosetheboss", "Mrwhosetheboss", ["Arun Maini"], ["internet_personality", "tech"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 0.0, "from_europe": 1.0,
+      "is_tech_reviewer": 1.0, "known_for_social_media": 0.7,
+      "uses_stage_name": 1.0, "subscriber_count_tier": 0.8,
+      "peak_era_2020s": 1.0}),
+
+    ("amouranth", "Amouranth", ["Kaitlyn Siragusa"], ["internet_personality", "streamer"], 86,
+     {"is_alive": 1.0, "is_female": 1.0, "is_internet_personality": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "known_for_streaming": 1.0, "is_live_streamer": 1.0,
+      "known_for_social_media": 0.8,
+      "is_business_person": 0.5,
+      "uses_stage_name": 1.0, "known_by_single_name": 1.0,
+      "subscriber_count_tier": 0.5,
+      "peak_era_2020s": 1.0}),
+
+    ("dr_disrespect", "Dr Disrespect", ["Herschel Beahm IV"], ["internet_personality", "gaming"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "is_gaming_creator": 1.0, "known_for_streaming": 1.0,
+      "is_live_streamer": 1.0, "known_for_social_media": 0.6,
+      "uses_stage_name": 1.0,
+      "subscriber_count_tier": 0.6,
+      "peak_era_2010s": 0.5, "peak_era_2020s": 0.8}),
+
+    ("shroud", "Shroud", ["Michael Grzesiek"], ["internet_personality", "gaming"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 0.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "is_gaming_creator": 1.0, "known_for_streaming": 1.0,
+      "is_live_streamer": 1.0, "known_for_social_media": 0.5,
+      "uses_stage_name": 1.0, "known_by_single_name": 1.0,
+      "subscriber_count_tier": 0.6,
+      "peak_era_2010s": 0.5, "peak_era_2020s": 0.7}),
+
+    ("penguinz0", "penguinz0", ["Charles White Jr.", "Cr1TiKaL", "MoistCr1TiKaL"], ["internet_personality", "gaming"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "is_gaming_creator": 0.6, "is_comedian": 0.5,
+      "known_for_streaming": 0.7, "is_live_streamer": 0.6,
+      "known_for_social_media": 0.7,
+      "uses_stage_name": 1.0, "subscriber_count_tier": 0.7,
+      "peak_era_2010s": 0.5, "peak_era_2020s": 0.8}),
+
+    ("nikocado_avocado", "Nikocado Avocado", ["Nicholas Perry"], ["internet_personality"], 86,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 0.0, "from_north_america": 0.5,
+      "from_europe": 0.3, "is_from_eastern_europe": 0.3,
+      "lives_in_north_america": 1.0,
+      "is_vlog_creator": 0.8, "known_for_social_media": 0.9,
+      "uses_stage_name": 1.0, "subscriber_count_tier": 0.6,
+      "peak_era_2020s": 1.0}),
+
+    ("jenna_marbles", "Jenna Marbles", ["Jenna Mourey"], ["internet_personality"], 88,
+     {"is_alive": 1.0, "is_female": 1.0, "is_internet_personality": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "is_comedian": 0.5, "is_vlog_creator": 0.8,
+      "known_for_social_media": 0.8,
+      "uses_stage_name": 1.0, "subscriber_count_tier": 0.8,
+      "is_retired": 0.8,
+      "peak_era_2010s": 0.9, "peak_era_2020s": 0.2}),
+
+    ("smosh", "Smosh", ["Anthony Padilla", "Ian Hecox"], ["internet_personality", "comedian"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "is_comedian": 0.7, "is_challenge_creator": 0.5,
+      "known_for_social_media": 0.7,
+      "subscriber_count_tier": 0.8,
+      "peak_era_2010s": 0.9, "peak_era_2020s": 0.5}),
+
+    ("dantdm", "DanTDM", ["Daniel Middleton"], ["internet_personality", "gaming"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 0.0, "from_europe": 1.0,
+      "is_gaming_creator": 1.0, "is_kids_content_creator": 0.7,
+      "known_for_social_media": 0.6,
+      "uses_stage_name": 1.0, "subscriber_count_tier": 0.8,
+      "peak_era_2010s": 0.9, "peak_era_2020s": 0.5}),
+
+    ("cocomelon", "Cocomelon", [], ["internet_personality", "kids_content"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "is_kids_content_creator": 1.0,
+      "known_for_social_media": 0.6,
+      "subscriber_count_tier": 1.0, "known_by_single_name": 1.0,
+      "peak_era_2020s": 1.0}),
+
+    ("linus_tech_tips", "Linus Sebastian", ["Linus Tech Tips"], ["internet_personality", "tech"], 88,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 1.0,
+      "is_american": 0.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "is_tech_reviewer": 1.0, "is_business_person": 0.6,
+      "known_for_social_media": 0.7,
+      "subscriber_count_tier": 0.9,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.8}),
+
+    ("nikkietutorials", "NikkieTutorials", ["Nikkie de Jager"], ["internet_personality", "beauty"], 87,
+     {"is_alive": 1.0, "is_female": 1.0, "is_internet_personality": 1.0,
+      "is_american": 0.0, "from_europe": 1.0,
+      "is_beauty_creator": 1.0, "is_host": 0.3,
+      "known_for_social_media": 0.8,
+      "uses_stage_name": 1.0, "subscriber_count_tier": 0.7,
+      "peak_era_2010s": 0.7, "peak_era_2020s": 0.7}),
+
+    ("matt_rife", "Matt Rife", [], ["comedian", "internet_personality"], 87,
+     {"is_alive": 1.0, "is_female": 0.0, "is_internet_personality": 0.7,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "age_under_30": 1.0, "is_comedian": 1.0, "is_standup_comedian": 1.0,
+      "known_for_social_media": 0.9,
+      "peak_era_2020s": 1.0}),
+
+    ("jaclyn_hill", "Jaclyn Hill", [], ["internet_personality", "beauty"], 86,
+     {"is_alive": 1.0, "is_female": 1.0, "is_internet_personality": 1.0,
+      "is_american": 1.0, "from_north_america": 1.0,
+      "lives_in_north_america": 1.0,
+      "is_beauty_creator": 1.0, "is_business_person": 0.5,
+      "known_for_social_media": 0.8,
+      "subscriber_count_tier": 0.6,
+      "peak_era_2010s": 0.8, "peak_era_2020s": 0.4}),
+]
 
 
 def main():
-    print("=== Trace Entity Generator ===\n")
+    # Collect all entities
+    all_new = []
+    for source in [MUSICIANS, ACTORS, ATHLETES, POLITICIANS, INTERNET_CREATORS]:
+        for item in source:
+            all_new.append(make_entity(*item))
 
-    # Validate
-    print("Validating entities...")
-    validate_entities(ALL_NEW_ENTITIES)
-
-    # Check for duplicate IDs
-    ids = [e["id"] for e in ALL_NEW_ENTITIES]
-    if len(ids) != len(set(ids)):
-        dupes = [x for x in ids if ids.count(x) > 1]
-        raise ValueError(f"Duplicate entity IDs: {set(dupes)}")
-    print(f"  No duplicate IDs found\n")
-
-    # Read existing entities to check for ID collisions
-    print("Reading existing data...")
+    # Load existing
     existing_ids = set()
-    if ENTITIES_PATH.exists():
-        with open(ENTITIES_PATH, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    existing_ids.add(json.loads(line)["id"])
-    print(f"  Found {len(existing_ids)} existing entities")
+    existing_lines = []
+    with ENTITIES_PATH.open("r") as f:
+        for line in f:
+            if line.strip():
+                e = json.loads(line)
+                existing_ids.add(e["id"])
+                existing_lines.append(line.rstrip())
 
-    collisions = existing_ids & set(ids)
-    if collisions:
-        raise ValueError(f"ID collisions with existing entities: {collisions}")
-    print(f"  No ID collisions\n")
+    # Filter duplicates
+    new_entities = [e for e in all_new if e["id"] not in existing_ids]
+    print(f"Existing entities: {len(existing_ids)}")
+    print(f"New entities to add: {len(new_entities)}")
+    print(f"Total will be: {len(existing_ids) + len(new_entities)}")
 
-    # Read existing gold cases
-    existing_gold = []
-    if GOLD_CASES_PATH.exists():
-        with open(GOLD_CASES_PATH, "r") as f:
-            existing_gold = json.load(f)
-    print(f"  Found {len(existing_gold)} existing gold cases\n")
+    # Verify all 84 attributes present
+    for e in new_entities:
+        missing = set(ALL_ATTRS) - set(e["attributes"].keys())
+        extra = set(e["attributes"].keys()) - set(ALL_ATTRS)
+        if missing:
+            print(f"WARNING: {e['id']} missing attributes: {missing}")
+        if extra:
+            print(f"WARNING: {e['id']} extra attributes: {extra}")
 
-    # Generate gold cases for new entities
-    print("Generating gold cases...")
-    new_gold_cases = []
-    for e in ALL_NEW_ENTITIES:
-        answers = generate_gold_answers(e["attributes"])
-        new_gold_cases.append({
-            "target_entity_id": e["id"],
-            "answers": answers,
-        })
+    # Write entities
+    with ENTITIES_PATH.open("w") as f:
+        for line in existing_lines:
+            f.write(line + "\n")
+        for e in new_entities:
+            f.write(json.dumps(e, separators=(",", ":")) + "\n")
 
-    # Summary stats
-    total_answers = sum(len(gc["answers"]) for gc in new_gold_cases)
-    avg_answers = total_answers / len(new_gold_cases)
-    print(f"  Generated {len(new_gold_cases)} gold cases")
-    print(f"  Average {avg_answers:.1f} definitive answers per entity (out of {len(ALL_ATTRIBUTES)})\n")
+    # Generate gold cases
+    with GOLD_CASES_PATH.open("r") as f:
+        existing_gold = json.load(f)
 
-    # Append to entities JSONL
-    print("Writing entities...")
-    with open(ENTITIES_PATH, "a") as f:
-        for e in ALL_NEW_ENTITIES:
-            entity_line = {
-                "id": e["id"],
-                "name": e["name"],
-                "aliases": e.get("aliases", []),
-                "categories": e.get("categories", []),
-                "popularity_score": e.get("popularity_score", 85),
-                "attributes": e["attributes"],
-            }
-            f.write(json.dumps(entity_line) + "\n")
-    print(f"  Appended {len(ALL_NEW_ENTITIES)} entities to {ENTITIES_PATH}\n")
+    existing_gold_ids = {g["target_entity_id"] for g in existing_gold}
+    new_gold = [entity_to_gold(e) for e in new_entities if e["id"] not in existing_gold_ids]
 
-    # Merge and write gold cases
-    print("Writing gold cases...")
-    merged_gold = existing_gold + new_gold_cases
-    with open(GOLD_CASES_PATH, "w") as f:
-        json.dump(merged_gold, f, indent=2)
-    print(f"  Wrote {len(merged_gold)} total gold cases to {GOLD_CASES_PATH}\n")
+    all_gold = existing_gold + new_gold
+    with GOLD_CASES_PATH.open("w") as f:
+        json.dump(all_gold, f, indent=2)
 
-    # Domain breakdown
-    print("=== Summary ===")
-    print(f"  New entities added:     {len(ALL_NEW_ENTITIES)}")
-    print(f"  Total entities now:     {len(existing_ids) + len(ALL_NEW_ENTITIES)}")
-    print(f"  Total gold cases now:   {len(merged_gold)}")
-    print()
-    domains = {
-        "Music": MUSIC_ENTITIES,
-        "Acting": ACTING_ENTITIES,
-        "Sport": SPORT_ENTITIES,
-        "Politics": POLITICS_ENTITIES,
-        "Internet": INTERNET_ENTITIES,
-    }
-    for domain, entities in domains.items():
-        print(f"  {domain:12s}: {len(entities)} entities")
-    print()
-    print("Done!")
+    print(f"Gold cases: {len(existing_gold)} existing + {len(new_gold)} new = {len(all_gold)} total")
+
+    # Domain distribution
+    domains = {"musician": 0, "athlete": 0, "actor": 0, "internet": 0, "politician": 0, "other": 0}
+    all_entities = []
+    with ENTITIES_PATH.open("r") as f:
+        for line in f:
+            if line.strip():
+                all_entities.append(json.loads(line))
+
+    for e in all_entities:
+        cats = e.get("categories", [])
+        attrs = e.get("attributes", {})
+        classified = False
+        if "musician" in cats or attrs.get("is_musician", 0) >= 0.8:
+            domains["musician"] += 1; classified = True
+        if "athlete" in cats or attrs.get("is_athlete", 0) >= 0.8:
+            domains["athlete"] += 1; classified = True
+        if "actor" in cats or attrs.get("is_actor", 0) >= 0.8:
+            domains["actor"] += 1; classified = True
+        if "internet_personality" in cats or attrs.get("is_internet_personality", 0) >= 0.8:
+            domains["internet"] += 1; classified = True
+        if "politician" in cats or attrs.get("is_politician", 0) >= 0.8:
+            domains["politician"] += 1; classified = True
+        if not classified:
+            domains["other"] += 1
+
+    print(f"\nDomain distribution:")
+    for k, v in sorted(domains.items()):
+        print(f"  {k}: {v}")
 
 
 if __name__ == "__main__":
