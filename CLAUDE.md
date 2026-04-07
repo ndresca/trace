@@ -83,8 +83,11 @@ Avg questions is a quality metric — lower is better, but accuracy
 is always the priority. Never sacrifice accuracy for speed.
 
 ## Deployment
-- API: https://trace-production-1e5e.up.railway.app
-- Platform: Railway (nixpacks, Python 3.11, uvicorn)
+- API: https://trace-production-bf3e.up.railway.app
+- Platform: Railway
+- Builder: Docker (Dockerfile at repo root)
+- Start: CMD ["uvicorn", "services.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+- Note: railway.json removed — Dockerfile is sole authority for start command
 - Mobile: Expo / React Native — reads EXPO_PUBLIC_API_BASE_URL from .env
 - To redeploy: railway up (from project root, service linked)
 
