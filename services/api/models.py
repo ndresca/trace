@@ -40,3 +40,19 @@ class GuessResponse(BaseModel):
     score: float
     remaining_candidates: int
     questions_asked: int
+
+
+class QuestionAnswer(BaseModel):
+    question_id: str
+    answer: str
+
+
+class FeedbackRequest(BaseModel):
+    session_id: str
+    correct_entity_id: Optional[str] = None
+    was_correct: bool
+    questions_asked: list[QuestionAnswer]
+
+
+class FeedbackResponse(BaseModel):
+    status: str

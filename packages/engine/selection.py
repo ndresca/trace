@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 
 from .models import Entity, Question
@@ -54,6 +55,12 @@ DOMAIN_CLASSIFIERS: set[str] = {
 CLASSIFIER_BONUS = 0.05  # additive bonus subtracted from classifier scores (lower = better)
 DOMAIN_BOOST = 0.5  # multiplier for sub-domain questions when domain is concentrated
 DOMAIN_THRESHOLD = 0.6  # >60% of pool must share a domain to activate sub-domain boost
+JITTER_AMOUNT = 0.02  # random noise to break ties and vary question order across games
+
+# Opener attributes: boosted on the very first question to ensure a broad,
+# high-signal split before narrowing into domains or geography.
+OPENER_ATTRIBUTES: set[str] = {"is_female"}
+OPENER_BONUS = 0.05  # additive bonus (subtracted from score, lower = better)
 
 
 def _detect_dominant_domain(
@@ -77,6 +84,7 @@ def _information_gain_score(
     entities: list[Entity],
     dominant_domain: str | None,
     domain_confirmed: bool,
+    is_first_question: bool = False,
 ) -> float:
     """Lower is better. Aligned with filtering thresholds (< 0.25 and > 0.75)."""
     values = [
@@ -96,6 +104,10 @@ def _information_gain_score(
     # Convert to lower-is-better (0.0 = perfect 50/50 split, 0.25 = no split)
     score = 0.25 - split_quality
 
+    # Boost opener attributes on the very first question
+    if is_first_question and question.attribute_key in OPENER_ATTRIBUTES:
+        score -= OPENER_BONUS
+
     # Boost classifiers only BEFORE a domain is confirmed
     if not domain_confirmed and question.attribute_key in DOMAIN_CLASSIFIERS:
         score -= CLASSIFIER_BONUS
@@ -114,6 +126,7 @@ def select_next_question(
     answered_attribute_keys: set[str] | None = None,
     ranked_entities: list[tuple[Entity, float]] | None = None,
     answers: dict[str, str] | None = None,
+    entities_all: list[Entity] | None = None,
 ) -> Question | None:
     excluded_attribute_keys: set[str] = set()
 
@@ -141,7 +154,12 @@ def select_next_question(
 
     if ranked_entities:
         entities = [entity for entity, _ in ranked_entities]
+    else:
+        entities = entities_all or []
+
+    if entities:
         dominant_domain = _detect_dominant_domain(entities)
+        is_first = not asked_question_ids
 
         # Stop boosting classifiers once a domain is confirmed (yes answer)
         domain_confirmed = False
@@ -153,8 +171,12 @@ def select_next_question(
 
         return min(
             remaining_questions,
-            key=lambda q: _information_gain_score(
-                q, entities, dominant_domain, domain_confirmed
+            key=lambda q: (
+                _information_gain_score(
+                    q, entities, dominant_domain, domain_confirmed,
+                    is_first_question=is_first,
+                )
+                + random.uniform(0, JITTER_AMOUNT)
             ),
         )
 

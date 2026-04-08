@@ -94,3 +94,16 @@ class SessionStore:
             except Exception:
                 pass
         self._memory.pop(session_id, None)
+
+    def set_feedback(self, session_id: str, entry: dict) -> None:
+        """Store feedback under a separate key with 30-day TTL."""
+        if self._using_redis:
+            try:
+                import json
+                self._redis.setex(
+                    f"feedback:{session_id}",
+                    30 * 86400,
+                    json.dumps(entry),
+                )
+            except Exception as e:
+                logger.warning("Redis feedback write failed: %s", e)

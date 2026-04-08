@@ -100,6 +100,7 @@ def next_action(
         answered_attribute_keys=set(answers.keys()),
         ranked_entities=ranked,
         answers=answers,
+        entities_all=entities,
     )
 
     if question is None:

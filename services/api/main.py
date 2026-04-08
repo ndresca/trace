@@ -1,6 +1,8 @@
 import json
+import logging
 import sys
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -17,12 +19,16 @@ from services.api.models import (
     AnswerRequest,
     AnswerResponse,
     ContinueRequest,
+    FeedbackRequest,
+    FeedbackResponse,
     GuessPayload,
     GuessResponse,
     QuestionPayload,
     StartResponse,
 )
 from services.api.sessions import SessionStore
+
+logger = logging.getLogger(__name__)
 
 
 QUESTIONS_PATH = ROOT / "data" / "questions" / "core_v1.json"
@@ -221,3 +227,35 @@ def guess(session_id: str) -> GuessResponse:
         remaining_candidates=len(ranked),
         questions_asked=session["question_count"],
     )
+
+
+FEEDBACK_LOG_PATH = ROOT / "data" / "feedback_log.jsonl"
+
+
+@app.post("/feedback", response_model=FeedbackResponse)
+def feedback(body: FeedbackRequest) -> FeedbackResponse:
+    entry = {
+        "session_id": body.session_id,
+        "correct_entity_id": body.correct_entity_id,
+        "was_correct": body.was_correct,
+        "questions_asked": [
+            {"question_id": qa.question_id, "answer": qa.answer}
+            for qa in body.questions_asked
+        ],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Append to local JSONL log — fire-and-forget
+    try:
+        with FEEDBACK_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception as e:
+        logger.warning("Failed to write feedback log: %s", e)
+
+    # Write to Redis — fire-and-forget
+    try:
+        store.set_feedback(body.session_id, entry)
+    except Exception as e:
+        logger.warning("Failed to write feedback to Redis: %s", e)
+
+    return FeedbackResponse(status="ok")

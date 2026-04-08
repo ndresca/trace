@@ -62,6 +62,7 @@ export default function App() {
   const [questionNumber, setQuestionNumber] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [answerHistory, setAnswerHistory] = useState<{ question_id: string; answer: string }[]>([]);
 
   function resetGame() {
     setScreen("home");
@@ -71,6 +72,7 @@ export default function App() {
     setRemaining(0);
     setQuestionNumber(0);
     setError(null);
+    setAnswerHistory([]);
   }
 
   async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
@@ -107,6 +109,7 @@ export default function App() {
       setSessionId(data.session_id);
       setQuestion(data.question);
       setQuestionNumber(1);
+      setAnswerHistory([]);
       setScreen("question");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start game.");
@@ -116,7 +119,8 @@ export default function App() {
   }
 
   async function submitAnswer(answer: AnswerValue) {
-    if (!sessionId) return;
+    if (!sessionId || !question) return;
+    const questionId = question.id;
     setIsLoading(true);
     setError(null);
     try {
@@ -124,6 +128,7 @@ export default function App() {
         method: "POST",
         body: JSON.stringify({ session_id: sessionId, answer }),
       });
+      setAnswerHistory((prev) => [...prev, { question_id: questionId, answer }]);
       handleAnswerResponse(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit answer.");
@@ -134,6 +139,7 @@ export default function App() {
 
   async function handleWrongGuess() {
     if (!sessionId) return;
+    sendFeedback(false, guess?.id);
     setIsLoading(true);
     setError(null);
     try {
@@ -152,7 +158,22 @@ export default function App() {
     }
   }
 
+  function sendFeedback(wasCorrect: boolean, correctEntityId?: string) {
+    if (!sessionId) return;
+    fetch(`${API_BASE_URL}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: sessionId,
+        correct_entity_id: correctEntityId ?? null,
+        was_correct: wasCorrect,
+        questions_asked: answerHistory,
+      }),
+    }).catch(() => {});
+  }
+
   function handleCorrectGuess() {
+    sendFeedback(true, guess?.id);
     if (adsRemoved) {
       setScreen("result");
     } else {
@@ -288,7 +309,7 @@ export default function App() {
             </Text>
             <View style={styles.answers}>
               <PrimaryButton label="Share" onPress={() => void handleShare()} />
-              <SecondaryButton label="Play Again" onPress={resetGame} />
+              <SecondaryButton label="Play Again" onPress={() => void startGame()} />
             </View>
           </View>
         )}
